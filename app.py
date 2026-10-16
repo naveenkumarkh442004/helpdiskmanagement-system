@@ -1744,6 +1744,493 @@ def admin_export_operations():
 
 
 # ==============================================================================
+# WEEK 7: Reports & Analytics Engine
+# ==============================================================================
+
+def get_reports_data(period="all", date_from=None, date_to=None):
+    """
+    Computes comprehensive operational metrics for tickets, categories, agent scorecards,
+    resolution turnaround (MTTR), pending aging, and monthly support trends.
+    """
+    connection = sqlite3.connect("helpdesk.db")
+    cursor = connection.cursor()
+
+    conditions = []
+    params = []
+    now = datetime.now()
+
+    if period == "7d":
+        seven_days_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+        conditions.append("t.created_at >= ?")
+        params.append(seven_days_ago)
+    elif period == "30d":
+        thirty_days_ago = (now - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        conditions.append("t.created_at >= ?")
+        params.append(thirty_days_ago)
+    elif period == "month":
+        start_of_month = now.strftime("%Y-%m-01 00:00:00")
+        conditions.append("t.created_at >= ?")
+        params.append(start_of_month)
+    elif period == "year":
+        start_of_year = now.strftime("%Y-01-01 00:00:00")
+        conditions.append("t.created_at >= ?")
+        params.append(start_of_year)
+    elif period == "custom" and (date_from or date_to):
+        if date_from:
+            conditions.append("t.created_at >= ?")
+            params.append(f"{date_from} 00:00:00")
+        if date_to:
+            conditions.append("t.created_at <= ?")
+            params.append(f"{date_to} 23:59:59")
+
+    where_clause = ""
+    if conditions:
+        where_clause = "WHERE " + " AND ".join(conditions)
+
+    # 1. High-level KPIs
+    cursor.execute(f"SELECT COUNT(*) FROM tickets t {where_clause}", params)
+    total_tickets = cursor.fetchone()[0]
+
+    def count_status(s):
+        conds = list(conditions) + ["t.status = ?"]
+        prms = list(params) + [s]
+        wh = "WHERE " + " AND ".join(conds)
+        cursor.execute(f"SELECT COUNT(*) FROM tickets t {wh}", prms)
+        return cursor.fetchone()[0]
+
+    open_tickets = count_status("Open")
+    inprogress_tickets = count_status("In Progress")
+    pending_tickets = count_status("Pending")
+    resolved_tickets = count_status("Resolved")
+    closed_tickets = count_status("Closed")
+    backlog_count = open_tickets + inprogress_tickets + pending_tickets
+
+    # Escalated tickets in period
+    esc_conds = list(conditions) + ["t.is_escalated = 1"]
+    cursor.execute(f"SELECT COUNT(*) FROM tickets t WHERE {' AND '.join(esc_conds)}", params)
+    escalated_tickets = cursor.fetchone()[0]
+
+    resolution_rate = round(((resolved_tickets + closed_tickets) / total_tickets * 100), 1) if total_tickets > 0 else 0.0
+
+    # 2. Average Resolution Time (MTTR)
+    res_conds = list(conditions) + ["t.status IN ('Resolved', 'Closed')"]
+    res_wh = "WHERE " + " AND ".join(res_conds)
+    cursor.execute(f"""
+        SELECT 
+            COUNT(*),
+            ROUND(AVG((julianday(COALESCE(t.resolved_at, t.closed_at, t.updated_at)) - julianday(t.created_at)) * 24.0), 1),
+            ROUND(AVG(julianday(COALESCE(t.resolved_at, t.closed_at, t.updated_at)) - julianday(t.created_at)), 2)
+        FROM tickets t {res_wh}
+    """, params)
+    mttr_row = cursor.fetchone()
+    avg_res_hours = mttr_row[1] if (mttr_row and mttr_row[1] is not None) else 0.0
+    avg_res_days = mttr_row[2] if (mttr_row and mttr_row[2] is not None) else 0.0
+
+    # Priority SLAs mapping
+    cursor.execute("SELECT name, color, sla_response_hours FROM ticket_priorities ORDER BY level ASC")
+    prio_meta_rows = cursor.fetchall()
+    prio_map = {r[0].lower(): {"color": r[1], "sla": r[2]} for r in prio_meta_rows}
+
+    # Overdue tickets count
+    cursor.execute("SELECT id, priority, created_at, status FROM tickets WHERE status NOT IN ('Resolved', 'Closed')")
+    active_for_sla = cursor.fetchall()
+    overdue_count = 0
+    for at in active_for_sla:
+        p_name = (at[1] or "Medium").lower()
+        sla_limit = prio_map.get(p_name, {}).get("sla", 24)
+        c_at_str = at[2]
+        if c_at_str:
+            try:
+                c_dt = datetime.strptime(str(c_at_str)[:19], "%Y-%m-%d %H:%M:%S")
+                if (now - c_dt).total_seconds() / 3600.0 > sla_limit:
+                    overdue_count += 1
+            except Exception:
+                pass
+
+    kpis = {
+        "total_tickets": total_tickets,
+        "open_tickets": open_tickets,
+        "inprogress_tickets": inprogress_tickets,
+        "pending_tickets": pending_tickets,
+        "resolved_tickets": resolved_tickets,
+        "closed_tickets": closed_tickets,
+        "backlog_count": backlog_count,
+        "escalated_tickets": escalated_tickets,
+        "overdue_tickets": overdue_count,
+        "resolution_rate": resolution_rate,
+        "avg_resolution_hours": avg_res_hours,
+        "avg_resolution_days": avg_res_days
+    }
+
+    # 3. Priority Turnaround & SLA Stats
+    priority_order = ["Critical", "High", "Medium", "Low"]
+    priority_stats = []
+    for p_name in priority_order:
+        p_info = prio_map.get(p_name.lower(), {"color": "#6366f1", "sla": 24})
+        p_conds = list(conditions) + ["t.priority = ?"]
+        p_params = list(params) + [p_name]
+        p_wh = "WHERE " + " AND ".join(p_conds)
+
+        cursor.execute(f"SELECT COUNT(*) FROM tickets t {p_wh}", p_params)
+        p_total = cursor.fetchone()[0]
+
+        cursor.execute(f"""
+            SELECT 
+                COUNT(*),
+                ROUND(AVG((julianday(COALESCE(t.resolved_at, t.closed_at, t.updated_at)) - julianday(t.created_at)) * 24.0), 1)
+            FROM tickets t {p_wh} AND t.status IN ('Resolved', 'Closed')
+        """, p_params)
+        p_res_row = cursor.fetchone()
+        p_res_count = p_res_row[0] or 0
+        p_avg_hours = p_res_row[1] if (p_res_row and p_res_row[1] is not None) else 0.0
+
+        priority_stats.append({
+            "name": p_name,
+            "color": p_info["color"],
+            "sla_hours": p_info["sla"],
+            "total": p_total,
+            "resolved": p_res_count,
+            "avg_hours": p_avg_hours
+        })
+
+    # 4. Category-Wise Issues Breakdown
+    cursor.execute(f"""
+        SELECT 
+            COALESCE(c.name, t.category) as cat_name,
+            COALESCE(c.color, '#6366f1') as cat_color,
+            COALESCE(c.icon, 'fa-ticket') as cat_icon,
+            COUNT(t.id) as total_tickets,
+            SUM(CASE WHEN t.status = 'Open' THEN 1 ELSE 0 END) as open_tickets,
+            SUM(CASE WHEN t.status = 'In Progress' THEN 1 ELSE 0 END) as inprogress_tickets,
+            SUM(CASE WHEN t.status = 'Pending' THEN 1 ELSE 0 END) as pending_tickets,
+            SUM(CASE WHEN t.status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as resolved_tickets,
+            ROUND(AVG(CASE WHEN t.status IN ('Resolved', 'Closed') THEN (julianday(COALESCE(t.resolved_at, t.closed_at, t.updated_at)) - julianday(t.created_at)) * 24.0 ELSE NULL END), 1) as avg_resolution_hours,
+            SUM(CASE WHEN t.is_escalated = 1 THEN 1 ELSE 0 END) as escalated_tickets
+        FROM tickets t
+        LEFT JOIN ticket_categories c ON LOWER(c.name) = LOWER(t.category)
+        {where_clause}
+        GROUP BY cat_name
+        ORDER BY total_tickets DESC
+    """, params)
+    category_stats = []
+    for crow in cursor.fetchall():
+        tot = crow[3] or 0
+        res = crow[7] or 0
+        cat_eff = round((res / tot * 100), 1) if tot > 0 else 0.0
+        pct = round((tot / total_tickets * 100), 1) if total_tickets > 0 else 0.0
+        category_stats.append({
+            "name": crow[0],
+            "color": crow[1],
+            "icon": crow[2],
+            "total": tot,
+            "open": crow[4] or 0,
+            "inprogress": crow[5] or 0,
+            "pending": crow[6] or 0,
+            "resolved": res,
+            "avg_res_hours": crow[8] if crow[8] is not None else 0.0,
+            "escalated": crow[9] or 0,
+            "resolution_rate": cat_eff,
+            "percentage": pct
+        })
+
+    # 5. Support Agent Performance Leaderboard
+    cursor.execute("""
+        SELECT 
+            u.id, u.name, u.username, u.role, COALESCE(u.department, 'Support') as department,
+            COUNT(t.id) as total_assigned,
+            SUM(CASE WHEN t.status IN ('Open', 'In Progress', 'Pending') THEN 1 ELSE 0 END) as active_tickets,
+            SUM(CASE WHEN t.status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as resolved_tickets,
+            ROUND(AVG(CASE WHEN t.status IN ('Resolved', 'Closed') THEN (julianday(COALESCE(t.resolved_at, t.closed_at, t.updated_at)) - julianday(t.created_at)) * 24.0 ELSE NULL END), 1) as avg_res_hours,
+            SUM(CASE WHEN t.is_escalated = 1 THEN 1 ELSE 0 END) as escalated_tickets
+        FROM users u
+        LEFT JOIN tickets t ON u.username = t.assigned_to
+        WHERE u.role IN ('Support', 'Admin')
+        GROUP BY u.id
+        ORDER BY total_assigned DESC, active_tickets DESC
+    """)
+    agent_stats = []
+    for arow in cursor.fetchall():
+        tot = arow[5] or 0
+        act = arow[6] or 0
+        res = arow[7] or 0
+        eff = round((res / tot * 100), 1) if tot > 0 else 100.0
+        agent_stats.append({
+            "id": arow[0],
+            "name": arow[1],
+            "username": arow[2],
+            "role": arow[3],
+            "department": arow[4],
+            "total_assigned": tot,
+            "active_tickets": act,
+            "resolved_tickets": res,
+            "avg_res_hours": arow[8] if arow[8] is not None else 0.0,
+            "escalated_tickets": arow[9] or 0,
+            "efficiency": eff
+        })
+
+    # 6. Pending Tickets Analysis & Aging Breakdown
+    cursor.execute("""
+        SELECT 
+            id, subject, username, assigned_to, priority, category, status, created_at,
+            ROUND((julianday('now') - julianday(created_at)) * 24.0, 1) as hours_elapsed,
+            ROUND(julianday('now') - julianday(created_at), 1) as days_elapsed
+        FROM tickets
+        WHERE status = 'Pending'
+        ORDER BY created_at ASC
+    """)
+    pending_tickets_list = []
+    pending_aging = {"under_24h": 0, "1_to_3d": 0, "3_to_7d": 0, "over_7d": 0}
+
+    for prow in cursor.fetchall():
+        hrs = prow[8] or 0.0
+        dys = prow[9] or 0.0
+        p_name = (prow[4] or "Medium").lower()
+        sla_limit = prio_map.get(p_name, {}).get("sla", 24)
+        is_overdue = hrs > sla_limit
+
+        if hrs < 24:
+            pending_aging["under_24h"] += 1
+        elif dys <= 3:
+            pending_aging["1_to_3d"] += 1
+        elif dys <= 7:
+            pending_aging["3_to_7d"] += 1
+        else:
+            pending_aging["over_7d"] += 1
+
+        pending_tickets_list.append({
+            "id": prow[0],
+            "subject": prow[1],
+            "username": prow[2],
+            "assigned_to": prow[3],
+            "priority": prow[4],
+            "category": prow[5],
+            "status": prow[6],
+            "created_at": prow[7],
+            "hours_elapsed": hrs,
+            "days_elapsed": dys,
+            "is_overdue": is_overdue,
+            "prio_color": prio_map.get(p_name, {}).get("color", "#d97706")
+        })
+
+    # 7. Monthly Support Statistics (Last 12 Months)
+    cursor.execute("""
+        SELECT 
+            strftime('%Y-%m', created_at) as ym,
+            COUNT(*) as total_created,
+            SUM(CASE WHEN status IN ('Resolved', 'Closed') THEN 1 ELSE 0 END) as total_resolved,
+            ROUND(AVG(CASE WHEN status IN ('Resolved', 'Closed') THEN (julianday(COALESCE(resolved_at, closed_at, updated_at)) - julianday(created_at)) * 24.0 ELSE NULL END), 1) as avg_res_hours,
+            SUM(CASE WHEN is_escalated = 1 THEN 1 ELSE 0 END) as total_escalated
+        FROM tickets
+        WHERE created_at IS NOT NULL
+        GROUP BY ym
+        ORDER BY ym ASC
+    """)
+    monthly_stats = []
+    max_monthly_count = 1
+    for mrow in cursor.fetchall():
+        ym = mrow[0]
+        if not ym:
+            continue
+        try:
+            m_dt = datetime.strptime(ym, "%Y-%m")
+            m_name = m_dt.strftime("%B %Y")
+            s_label = m_dt.strftime("%b %y")
+        except Exception:
+            m_name = ym
+            s_label = ym
+
+        created = mrow[1] or 0
+        resolved = mrow[2] or 0
+        m_rate = round((resolved / created * 100), 1) if created > 0 else 0.0
+        m_avg = mrow[3] if mrow[3] is not None else 0.0
+        m_esc = mrow[4] or 0
+
+        if created > max_monthly_count:
+            max_monthly_count = created
+        if resolved > max_monthly_count:
+            max_monthly_count = resolved
+
+        monthly_stats.append({
+            "ym": ym,
+            "month_name": m_name,
+            "short_label": s_label,
+            "created": created,
+            "resolved": resolved,
+            "resolution_rate": m_rate,
+            "avg_res_hours": m_avg,
+            "escalated": m_esc
+        })
+
+    connection.close()
+
+    return {
+        "kpis": kpis,
+        "priority_stats": priority_stats,
+        "category_stats": category_stats,
+        "agent_stats": agent_stats,
+        "pending_tickets_list": pending_tickets_list,
+        "pending_aging": pending_aging,
+        "monthly_stats": monthly_stats,
+        "max_monthly_count": max_monthly_count
+    }
+
+
+@app.route("/reports")
+@app.route("/analytics")
+@support_or_admin_required
+def reports():
+    username = session["username"]
+    role = session.get("role", "User")
+    period = request.args.get("period", "all").strip().lower()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+
+    if period not in ["all", "7d", "30d", "month", "year", "custom"]:
+        period = "all"
+
+    data = get_reports_data(period=period, date_from=date_from, date_to=date_to)
+
+    return render_template(
+        "reports.html",
+        username=username,
+        role=role,
+        current_period=period,
+        date_from=date_from,
+        date_to=date_to,
+        kpis=data["kpis"],
+        priority_stats=data["priority_stats"],
+        category_stats=data["category_stats"],
+        agent_stats=data["agent_stats"],
+        pending_tickets_list=data["pending_tickets_list"],
+        pending_aging=data["pending_aging"],
+        monthly_stats=data["monthly_stats"],
+        max_monthly_count=data["max_monthly_count"]
+    )
+
+
+@app.route("/api/reports/stats")
+@support_or_admin_required
+def api_reports_stats():
+    period = request.args.get("period", "all").strip().lower()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    data = get_reports_data(period=period, date_from=date_from, date_to=date_to)
+    return jsonify({"success": True, "period": period, "data": data})
+
+
+@app.route("/reports/export/summary")
+@support_or_admin_required
+def reports_export_summary():
+    period = request.args.get("period", "all").strip().lower()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    data = get_reports_data(period=period, date_from=date_from, date_to=date_to)
+    kpis = data["kpis"]
+
+    si = io.StringIO()
+    cw = csv.writer(si)
+
+    cw.writerow(["=== HELPDESK EXECUTIVE OPERATIONS & KPI REPORT ==="])
+    cw.writerow(["Reporting Period", period.upper()])
+    cw.writerow(["Generated At", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+    cw.writerow([])
+    cw.writerow(["Metric", "Value"])
+    cw.writerow(["Total Tickets Logged", kpis["total_tickets"]])
+    cw.writerow(["Open Tickets Queue", kpis["open_tickets"]])
+    cw.writerow(["In Progress Tickets", kpis["inprogress_tickets"]])
+    cw.writerow(["Pending Tickets Backlog", kpis["pending_tickets"]])
+    cw.writerow(["Resolved Tickets", kpis["resolved_tickets"]])
+    cw.writerow(["Closed Tickets", kpis["closed_tickets"]])
+    cw.writerow(["Active Backlog (Open + Progress + Pending)", kpis["backlog_count"]])
+    cw.writerow(["Overall Resolution Rate (%)", f"{kpis['resolution_rate']}%"])
+    cw.writerow(["Average Resolution Time (Hours)", f"{kpis['avg_resolution_hours']}h"])
+    cw.writerow(["Average Resolution Time (Days)", f"{kpis['avg_resolution_days']}d"])
+    cw.writerow(["Total Escalations", kpis["escalated_tickets"]])
+    cw.writerow(["Overdue SLA Tickets", kpis["overdue_tickets"]])
+    cw.writerow([])
+    cw.writerow(["--- PRIORITY TIERS & TURNAROUND ---"])
+    cw.writerow(["Priority Tier", "Target SLA (Hours)", "Total Tickets", "Resolved Count", "Average Turnaround (Hours)"])
+    for p in data["priority_stats"]:
+        cw.writerow([p["name"], p["sla_hours"], p["total"], p["resolved"], f"{p['avg_hours']}h"])
+
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = f"attachment; filename=helpdesk_summary_report_{period}.csv"
+    output.headers["Content-type"] = "text/csv; charset=utf-8"
+    return output
+
+
+@app.route("/reports/export/categories")
+@support_or_admin_required
+def reports_export_categories():
+    period = request.args.get("period", "all").strip().lower()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    data = get_reports_data(period=period, date_from=date_from, date_to=date_to)
+
+    si = io.StringIO()
+    cw = csv.writer(si)
+
+    cw.writerow(["=== CATEGORY-WISE ISSUES & RESOLUTION REPORT ==="])
+    cw.writerow(["Reporting Period", period.upper()])
+    cw.writerow(["Generated At", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+    cw.writerow([])
+    cw.writerow(["Category Name", "Total Tickets", "Share of Volume (%)", "Open", "In Progress", "Pending", "Resolved", "Average MTTR (Hours)", "Resolution Rate (%)", "Escalations"])
+    for c in data["category_stats"]:
+        cw.writerow([c["name"], c["total"], f"{c['percentage']}%", c["open"], c["inprogress"], c["pending"], c["resolved"], f"{c['avg_res_hours']}h", f"{c['resolution_rate']}%", c["escalated"]])
+
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = f"attachment; filename=helpdesk_category_report_{period}.csv"
+    output.headers["Content-type"] = "text/csv; charset=utf-8"
+    return output
+
+
+@app.route("/reports/export/agents")
+@support_or_admin_required
+def reports_export_agents():
+    period = request.args.get("period", "all").strip().lower()
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    data = get_reports_data(period=period, date_from=date_from, date_to=date_to)
+
+    si = io.StringIO()
+    cw = csv.writer(si)
+
+    cw.writerow(["=== SUPPORT AGENT PERFORMANCE SCORECARDS ==="])
+    cw.writerow(["Reporting Period", period.upper()])
+    cw.writerow(["Generated At", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+    cw.writerow([])
+    cw.writerow(["Agent Name", "Username", "Role", "Department", "Total Assigned", "Active Queue", "Resolved Tickets", "Efficiency (%)", "Average MTTR (Hours)", "Escalated Handled"])
+    for a in data["agent_stats"]:
+        cw.writerow([a["name"], a["username"], a["role"], a["department"], a["total_assigned"], a["active_tickets"], a["resolved_tickets"], f"{a['efficiency']}%", f"{a['avg_res_hours']}h", a["escalated_tickets"]])
+
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = f"attachment; filename=helpdesk_agent_scorecards_{period}.csv"
+    output.headers["Content-type"] = "text/csv; charset=utf-8"
+    return output
+
+
+@app.route("/reports/export/monthly")
+@support_or_admin_required
+def reports_export_monthly():
+    data = get_reports_data(period="all")
+
+    si = io.StringIO()
+    cw = csv.writer(si)
+
+    cw.writerow(["=== MONTHLY SUPPORT STATISTICS & HISTORICAL TRENDS ==="])
+    cw.writerow(["Generated At", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+    cw.writerow([])
+    cw.writerow(["Month Code", "Month Name", "Tickets Created", "Tickets Resolved", "Resolution Rate (%)", "Average MTTR (Hours)", "Escalations"])
+    for m in data["monthly_stats"]:
+        cw.writerow([m["ym"], m["month_name"], m["created"], m["resolved"], f"{m['resolution_rate']}%", f"{m['avg_res_hours']}h", m["escalated"]])
+
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=helpdesk_monthly_statistics.csv"
+    output.headers["Content-type"] = "text/csv; charset=utf-8"
+    return output
+
+
+# ==============================================================================
 # Profile Management Routes
 # ==============================================================================
 

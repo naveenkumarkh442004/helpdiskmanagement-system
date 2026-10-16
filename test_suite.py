@@ -435,6 +435,108 @@ def run_tests():
     assert b"PRIORITY TIERS & SLA TARGETS" in ops_csv_res.data
     print("[PASS] Help Desk Operations executive report CSV export verified.")
 
+    # -------------------------------------------------------------
+    # Test 15: Week 7 Reports & Analytics Portal & Period Filters
+    # -------------------------------------------------------------
+    with client.session_transaction() as sess:
+        sess["username"] = "admin_tester"
+        sess["role"] = "Admin"
+        sess["name"] = "Admin Master"
+
+    rep_res = client.get("/reports")
+    assert rep_res.status_code == 200
+    assert b"Help Desk Reports & Analytics" in rep_res.data
+    assert b"Ticket Status Summaries" in rep_res.data
+    assert b"Monthly Support Statistics" in rep_res.data
+    assert b"Category-Wise Issues" in rep_res.data
+    assert b"Support Agent Performance" in rep_res.data
+    assert b"Pending Tickets & Aging Backlog" in rep_res.data
+
+    # Period filters
+    assert client.get("/reports?period=7d").status_code == 200
+    assert client.get("/reports?period=30d").status_code == 200
+    assert client.get("/reports?period=month").status_code == 200
+    assert client.get("/reports?period=year").status_code == 200
+    assert client.get("/analytics").status_code == 200
+    print("[PASS] Week 7 Reports & Analytics portal rendered with all sections and period filters.")
+
+    # Authorization verification: non-staff user blocked
+    with client.session_transaction() as sess:
+        sess["username"] = "alice_client"
+        sess["role"] = "User"
+    user_blocked_res = client.get("/reports", follow_redirects=True)
+    assert user_blocked_res.status_code == 200
+    assert b"Access denied" in user_blocked_res.data
+    print("[PASS] Access control verified: standard Users blocked from staff analytics.")
+
+    # -------------------------------------------------------------
+    # Test 16: Week 7 JSON Analytics API (/api/reports/stats)
+    # -------------------------------------------------------------
+    with client.session_transaction() as sess:
+        sess["username"] = "admin_tester"
+        sess["role"] = "Admin"
+
+    api_res = client.get("/api/reports/stats")
+    assert api_res.status_code == 200
+    api_json = json.loads(api_res.data)
+    assert api_json["success"] is True
+    data_payload = api_json["data"]
+    assert "kpis" in data_payload
+    assert "priority_stats" in data_payload
+    assert "category_stats" in data_payload
+    assert "agent_stats" in data_payload
+    assert "pending_tickets_list" in data_payload
+    assert "monthly_stats" in data_payload
+    assert data_payload["kpis"]["total_tickets"] > 0
+    assert "avg_resolution_hours" in data_payload["kpis"]
+    print(f"[PASS] JSON Analytics API validated: {data_payload['kpis']['total_tickets']} tickets, MTTR: {data_payload['kpis']['avg_resolution_hours']}h.")
+
+    # -------------------------------------------------------------
+    # Test 17: Week 7 Dedicated CSV Reports Exports
+    # -------------------------------------------------------------
+    exp_summary = client.get("/reports/export/summary?period=all")
+    assert exp_summary.status_code == 200
+    assert exp_summary.headers.get("Content-Type", "").startswith("text/csv")
+    assert b"EXECUTIVE OPERATIONS & KPI REPORT" in exp_summary.data
+    assert b"Average Resolution Time" in exp_summary.data
+
+    exp_cats = client.get("/reports/export/categories?period=all")
+    assert exp_cats.status_code == 200
+    assert exp_cats.headers.get("Content-Type", "").startswith("text/csv")
+    assert b"CATEGORY-WISE ISSUES & RESOLUTION REPORT" in exp_cats.data
+
+    exp_agents = client.get("/reports/export/agents?period=all")
+    assert exp_agents.status_code == 200
+    assert exp_agents.headers.get("Content-Type", "").startswith("text/csv")
+    assert b"SUPPORT AGENT PERFORMANCE SCORECARDS" in exp_agents.data
+
+    exp_monthly = client.get("/reports/export/monthly")
+    assert exp_monthly.status_code == 200
+    assert exp_monthly.headers.get("Content-Type", "").startswith("text/csv")
+    assert b"MONTHLY SUPPORT STATISTICS & HISTORICAL TRENDS" in exp_monthly.data
+    print("[PASS] All 4 dedicated Week 7 CSV report exports verified.")
+
+    # -------------------------------------------------------------
+    # Test 18: Pending Tickets & Aging Backlog Analysis
+    # -------------------------------------------------------------
+    c.execute("""
+        INSERT INTO tickets (username, category, priority, subject, description, status)
+        VALUES ('alice_client', 'Technical Issue', 'Medium', 'Pending Vendor Clarification', 'Awaiting API token response from external provider.', 'Pending')
+    """)
+    conn.commit()
+    pending_ticket_id = c.lastrowid
+
+    p_check_res = client.get("/api/reports/stats")
+    p_check_json = json.loads(p_check_res.data)["data"]
+    assert p_check_json["kpis"]["pending_tickets"] >= 1
+    assert any(pt["id"] == pending_ticket_id for pt in p_check_json["pending_tickets_list"])
+    assert p_check_json["pending_aging"]["under_24h"] >= 1
+    print(f"[PASS] Pending ticket #{pending_ticket_id} verified in aging backlog analysis.")
+
+    # Clean up pending test ticket
+    c.execute("DELETE FROM tickets WHERE id = ?", (pending_ticket_id,))
+    conn.commit()
+
     conn.close()
     print("\n=== ALL COMPREHENSIVE HELPDESK TEST CASES PASSED SUCCESSFULLY ===")
 
