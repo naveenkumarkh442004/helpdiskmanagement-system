@@ -247,6 +247,11 @@ def run_tests():
     # -------------------------------------------------------------
     # Test 9: Admin User Management (Create, Edit, Toggle Status, Reset Password)
     # -------------------------------------------------------------
+    c.execute("DELETE FROM users WHERE username = 'david_ops'")
+    c.execute("DELETE FROM ticket_categories WHERE name LIKE 'Database &%'")
+    c.execute("DELETE FROM ticket_priorities WHERE name LIKE '%Blocker%'")
+    conn.commit()
+
     # 9a. Create new user via admin endpoint
     create_u_res = client.post("/admin/user/create", data={
         "name": "David Operations",

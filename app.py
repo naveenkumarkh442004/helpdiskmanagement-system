@@ -231,6 +231,20 @@ def init_db():
             VALUES (?, ?, ?, ?, ?, 1)
         """, default_priorities)
 
+    # Seed Default Administrator and Support staff if no Admin exists
+    cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
+    if cursor.fetchone()[0] == 0:
+        admin_pass = generate_password_hash("admin123")
+        support_pass = generate_password_hash("support123")
+        cursor.execute("""
+            INSERT INTO users (name, email, username, password, role, status, department)
+            VALUES (?, ?, ?, ?, 'Admin', 'Active', 'IT Administration')
+        """, ("System Administrator", "admin@helpdesk.local", "admin", admin_pass))
+        cursor.execute("""
+            INSERT INTO users (name, email, username, password, role, status, department)
+            VALUES (?, ?, ?, ?, 'Support', 'Active', 'Technical Support')
+        """, ("Support Specialist", "support@helpdesk.local", "support_agent", support_pass))
+
     connection.commit()
     connection.close()
 
