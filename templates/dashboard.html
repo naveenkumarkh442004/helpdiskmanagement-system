@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Dashboard - HelpDesk</title>
+    <meta name="description" content="Manage your HelpDesk support requests and profile.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- App Navigation Header -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="user-dash-logo">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item active"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+                <li><a href="/create-ticket" class="nav-item"><i class="fa-solid fa-plus-circle"></i> New Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item"><i class="fa-solid fa-ticket"></i> My Tickets</a></li>
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-user-gear"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- In-App Notification Bell & Dropdown -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% elif 'Reopened' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar">{{ username[0] }}</div>
+                    <span class="user-meta-name">{{ username }}</span>
+                    <span class="badge badge-role-user">User</span>
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="app-main">
+        <div class="app-container">
+            
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' or category == 'error' else ('warning' if category == 'warning' else 'success') }}" style="margin-bottom: 1.5rem;">
+                            <i class="fa-solid {{ 'fa-circle-exclamation' if category == 'danger' or category == 'warning' else 'fa-circle-check' }} alert-icon"></i>
+                            <div>{{ message }}</div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Welcome Banner -->
+            <div class="welcome-box">
+                <div class="welcome-text">
+                    <h1>Welcome back, {{ username }}!</h1>
+                    <p>Track your support requests, submit new issues, or communicate with our assigned support team.</p>
+                </div>
+                <div>
+                    <a href="/create-ticket" class="btn btn-primary" id="banner-create-ticket">
+                        <i class="fa-solid fa-plus"></i> Open Ticket
+                    </a>
+                </div>
+            </div>
+
+            <!-- Stats Overview -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-indigo">
+                        <i class="fa-solid fa-ticket"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.total if stats else 0 }}</div>
+                        <div class="stat-label">Total Tickets</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-blue">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.open if stats else 0 }}</div>
+                        <div class="stat-label">Active / Open</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-amber" style="background: #fef3c7; color: #d97706;">
+                        <i class="fa-solid fa-spinner"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.inprogress if stats else 0 }}</div>
+                        <div class="stat-label">In Progress</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-emerald">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.resolved if stats else 0 }}</div>
+                        <div class="stat-label">Resolved</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="page-header" style="margin-top: 1.5rem; margin-bottom: 1rem;">
+                <h2>Quick Actions</h2>
+            </div>
+            
+            <div class="quick-actions-grid">
+                <a href="/create-ticket" class="action-card" id="card-action-create">
+                    <div class="action-icon">
+                        <i class="fa-solid fa-plus-circle"></i>
+                    </div>
+                    <div class="action-info">
+                        <h3>Create Support Ticket</h3>
+                        <p>Submit technical, hardware, or network problems to our support team.</p>
+                    </div>
+                </a>
+
+                <a href="/my-tickets" class="action-card" id="card-action-tickets">
+                    <div class="action-icon">
+                        <i class="fa-solid fa-list-check"></i>
+                    </div>
+                    <div class="action-info">
+                        <h3>My Tickets</h3>
+                        <p>View ticket progression, responses, and real-time status updates.</p>
+                    </div>
+                </a>
+
+                <a href="/notifications" class="action-card" id="card-action-notifs">
+                    <div class="action-icon">
+                        <i class="fa-solid fa-bell"></i>
+                    </div>
+                    <div class="action-info">
+                        <h3>Notification Center</h3>
+                        <p>Check recent alerts, agent replies, and status change notices.</p>
+                    </div>
+                </a>
+
+                <a href="/profile" class="action-card" id="card-action-profile">
+                    <div class="action-icon">
+                        <i class="fa-solid fa-id-badge"></i>
+                    </div>
+                    <div class="action-info">
+                        <h3>My Profile</h3>
+                        <p>Review your personal account details, change password, and settings.</p>
+                    </div>
+                </a>
+            </div>
+
+            <!-- Recent Tickets Section -->
+            <div class="page-header" style="margin-top: 2rem; margin-bottom: 1rem;">
+                <h2>Recent Tickets</h2>
+                <a href="/my-tickets" class="btn btn-secondary btn-sm" id="btn-view-all-tickets">
+                    View All Tickets <i class="fa-solid fa-arrow-right"></i>
+                </a>
+            </div>
+
+            {% if recent_tickets and recent_tickets|length > 0 %}
+                <div class="table-responsive">
+                    <table class="custom-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Subject</th>
+                                <th>Assigned Agent</th>
+                                <th>Category</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Created Date</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ticket in recent_tickets %}
+                            <tr>
+                                <td><a href="/ticket/{{ ticket[0] }}" class="table-ticket-id">#{{ ticket[0] }}</a></td>
+                                <td>
+                                    <a href="/ticket/{{ ticket[0] }}" style="text-decoration: none; color: inherit;">
+                                        <strong class="table-subject">{{ ticket[1] }}</strong>
+                                    </a>
+                                </td>
+                                <td>
+                                    {% if ticket|length > 8 and ticket[8] %}
+                                        <span class="table-agent-badge">
+                                            <span class="table-agent-avatar">{{ ticket[8][0] }}</span>
+                                            <span>@{{ ticket[8] }}</span>
+                                        </span>
+                                    {% else %}
+                                        <span class="table-agent-badge unassigned">
+                                            <i class="fa-solid fa-circle-question"></i> Unassigned
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge badge-category">{{ ticket[2] }}</span></td>
+                                <td>
+                                    {% if ticket[3] == 'Critical' %}
+                                        <span class="badge badge-priority-critical"><i class="fa-solid fa-circle-exclamation"></i> Critical</span>
+                                    {% elif ticket[3] == 'High' %}
+                                        <span class="badge badge-priority-high"><i class="fa-solid fa-arrow-up"></i> High</span>
+                                    {% elif ticket[3] == 'Medium' %}
+                                        <span class="badge badge-priority-medium"><i class="fa-solid fa-minus"></i> Medium</span>
+                                    {% else %}
+                                        <span class="badge badge-priority-low"><i class="fa-solid fa-arrow-down"></i> Low</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ticket[4] == 'Open' %}
+                                        <span class="badge badge-status-open"><span class="badge-dot"></span> Open</span>
+                                    {% elif ticket[4] == 'In Progress' %}
+                                        <span class="badge badge-status-inprogress"><span class="badge-dot"></span> In Progress</span>
+                                    {% elif ticket[4] == 'Pending' %}
+                                        <span class="badge badge-status-inprogress" style="background: #fef3c7; color: #b45309;"><i class="fa-solid fa-hourglass-half"></i> Pending</span>
+                                    {% elif ticket[4] == 'Resolved' %}
+                                        <span class="badge badge-status-resolved"><span class="badge-dot"></span> Resolved</span>
+                                    {% else %}
+                                        <span class="badge badge-status-closed"><span class="badge-dot"></span> {{ ticket[4] }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="table-date">{{ ticket[5] }}</td>
+                                <td style="text-align: right;">
+                                    <a href="/ticket/{{ ticket[0] }}" class="btn btn-secondary btn-sm" id="btn-dash-view-{{ ticket[0] }}">
+                                        <i class="fa-solid fa-arrow-up-right-from-square"></i> View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon"><i class="fa-solid fa-ticket"></i></div>
+                    <h3 class="empty-title">No tickets yet</h3>
+                    <p class="empty-desc">You haven't opened any support tickets. Have a question or technical problem? We're here to help!</p>
+                    <a href="/create-ticket" class="btn btn-primary" style="margin-top: 1rem;">Create Your First Ticket</a>
+                </div>
+            {% endif %}
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

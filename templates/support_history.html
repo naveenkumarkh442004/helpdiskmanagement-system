@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support History & Audit Trail - HelpDesk</title>
+    <meta name="description" content="Chronological ticket audit logs, lifecycle events, staff actions, and compliance history.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="history-brand-logo">
+                <div class="brand-icon" style="background: linear-gradient(135deg, #0284c7 0%, #6366f1 100%);">
+                    <i class="fa-solid fa-timeline"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+                <li><a href="/my-tickets" class="nav-item"><i class="fa-solid fa-ticket"></i> All Tickets</a></li>
+                <li><a href="/support-history" class="nav-item active"><i class="fa-solid fa-clock-rotate-left"></i> Support History</a></li>
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-user-gear"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- Notification Bell -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Escalat' in n[1] or '🚨' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i>
+                                        {% elif 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: {{ '#db2777' if role == 'Admin' else ('#059669' if role == 'Support' else '#4f46e5') }};">
+                        {{ username[0] if username else 'U' }}
+                    </div>
+                    <span class="user-meta-name">{{ username }}</span>
+                    {% if role == 'Admin' %}
+                        <span class="badge badge-role-admin">Admin</span>
+                    {% elif role == 'Support' %}
+                        <span class="badge badge-role-support">Support</span>
+                    {% endif %}
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="app-main">
+        <div class="app-container">
+            
+            <!-- Page Header -->
+            <div class="page-header" style="margin-bottom: 1.5rem;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                        <a href="/dashboard" style="color: var(--text-muted); font-size: 0.875rem; text-decoration: none;">
+                            <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+                        </a>
+                        <span style="color: var(--border-medium);">/</span>
+                        <span style="color: var(--primary); font-weight: 600; font-size: 0.875rem;">Support Audit History</span>
+                    </div>
+                    <h1>Support History & Audit Logs</h1>
+                    <p class="text-muted">Track chronological ticket state transitions, staff actions, escalations, and customer interactions.</p>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <a href="/support-history/export?type={{ current_filters.type }}&actor={{ current_filters.actor }}&ticket_id={{ current_filters.ticket_id }}" class="btn btn-secondary btn-sm" id="btn-export-audit-csv">
+                        <i class="fa-solid fa-file-csv"></i> Export Audit Log (CSV)
+                    </a>
+                    <a href="/tickets/export" class="btn btn-primary btn-sm" id="btn-export-tickets-csv">
+                        <i class="fa-solid fa-download"></i> Export All Tickets
+                    </a>
+                </div>
+            </div>
+
+            <!-- Stats Overview Cards -->
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1.5rem;">
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-indigo">
+                        <i class="fa-solid fa-timeline"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.total_activities }}</div>
+                        <div class="stat-label">Total Lifecycle Events</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-rose" style="background: #fef2f2; color: #dc2626;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.total_escalations }}</div>
+                        <div class="stat-label">Total Escalations</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-blue">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.total_status_changes }}</div>
+                        <div class="stat-label">Status Transitions</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-emerald">
+                        <i class="fa-solid fa-filter"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.filtered_count }}</div>
+                        <div class="stat-label">Displaying Records</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Filter Bar Card -->
+            <div class="portal-toolbar" style="padding: 1.25rem; margin-bottom: 1.5rem; flex-direction: column; align-items: stretch; gap: 1rem;">
+                
+                <!-- Quick Filter Tabs -->
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="filter-pills-group">
+                        <a href="/support-history" class="filter-pill {% if not current_filters.type or current_filters.type == 'all' %}active{% endif %}">
+                            All Events ({{ stats.total_activities }})
+                        </a>
+                        <a href="/support-history?type=ESCALATION" class="filter-pill {% if current_filters.type == 'ESCALATION' %}active{% endif %}" style="border-color: #fca5a5;">
+                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i> Escalations ({{ stats.total_escalations }})
+                        </a>
+                        <a href="/support-history?type=STATUS_CHANGE" class="filter-pill {% if current_filters.type == 'STATUS_CHANGE' %}active{% endif %}">
+                            <i class="fa-solid fa-arrows-rotate" style="color: #0284c7;"></i> Status Changes
+                        </a>
+                        <a href="/support-history?type=ASSIGNMENT" class="filter-pill {% if current_filters.type == 'ASSIGNMENT' %}active{% endif %}">
+                            <i class="fa-solid fa-user-check" style="color: #059669;"></i> Assignments
+                        </a>
+                        <a href="/support-history?type=REPLY" class="filter-pill {% if current_filters.type == 'REPLY' %}active{% endif %}">
+                            <i class="fa-solid fa-comment-dots" style="color: #6366f1;"></i> Replies
+                        </a>
+                        <a href="/support-history?type=NOTE" class="filter-pill {% if current_filters.type == 'NOTE' %}active{% endif %}">
+                            <i class="fa-solid fa-lock" style="color: #d97706;"></i> Internal Notes
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Detailed Filter Form -->
+                <form method="GET" action="/support-history" class="advanced-filter-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: end;">
+                    
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Keyword / Message Search</label>
+                        <div style="position: relative;">
+                            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.8rem;"></i>
+                            <input 
+                                type="text" 
+                                name="q" 
+                                value="{{ current_filters.q }}" 
+                                class="form-control form-control-sm" 
+                                style="padding-left: 2rem;" 
+                                placeholder="Search message text..."
+                            >
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Actor Username</label>
+                        <input 
+                            type="text" 
+                            name="actor" 
+                            value="{{ current_filters.actor }}" 
+                            class="form-control form-control-sm" 
+                            placeholder="e.g. joe_support"
+                        >
+                    </div>
+
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Ticket ID #</label>
+                        <input 
+                            type="number" 
+                            name="ticket_id" 
+                            value="{{ current_filters.ticket_id }}" 
+                            class="form-control form-control-sm" 
+                            placeholder="e.g. 101"
+                        >
+                    </div>
+
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Event Type</label>
+                        <select name="type" class="form-control form-control-sm">
+                            <option value="all">-- All Event Types --</option>
+                            {% for t in types_list %}
+                                <option value="{{ t }}" {% if current_filters.type == t %}selected{% endif %}>{{ t }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Date From</label>
+                        <input 
+                            type="date" 
+                            name="date_from" 
+                            value="{{ current_filters.date_from }}" 
+                            class="form-control form-control-sm"
+                        >
+                    </div>
+
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Date To</label>
+                        <input 
+                            type="date" 
+                            name="date_to" 
+                            value="{{ current_filters.date_to }}" 
+                            class="form-control form-control-sm"
+                        >
+                    </div>
+
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button type="submit" class="btn btn-primary btn-sm" style="flex: 1;">
+                            <i class="fa-solid fa-filter"></i> Apply
+                        </button>
+                        <a href="/support-history" class="btn btn-secondary btn-sm" title="Reset Filters">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </a>
+                    </div>
+
+                </form>
+
+            </div>
+
+            <!-- Activity Logs Table / Timeline View -->
+            {% if activities and activities|length > 0 %}
+                <div class="table-responsive">
+                    <table class="custom-table" id="auditHistoryTable">
+                        <thead>
+                            <tr>
+                                <th>Event ID</th>
+                                <th>Timestamp</th>
+                                <th>Ticket</th>
+                                <th>Actor</th>
+                                <th>Event Type</th>
+                                <th>Description / State Transition</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for a in activities %}
+                            <tr>
+                                <td><span class="table-ticket-id">#{{ a[0] }}</span></td>
+                                <td class="table-date" style="white-space: nowrap;">
+                                    <i class="fa-regular fa-clock" style="margin-right: 0.25rem;"></i>{{ a[7] }}
+                                </td>
+                                <td>
+                                    <a href="/ticket/{{ a[1] }}" style="text-decoration: none; color: inherit; display: block;">
+                                        <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                            <span class="badge badge-category" style="font-size: 0.7rem;">#{{ a[1] }}</span>
+                                            <strong class="table-subject" style="font-size: 0.88rem;">{{ a[8] or 'Ticket #' ~ a[1] }}</strong>
+                                        </div>
+                                    </a>
+                                </td>
+                                <td>
+                                    <span class="table-agent-badge">
+                                        <span class="table-agent-avatar" style="width: 22px; height: 22px; font-size: 0.7rem;">{{ a[2][0] }}</span>
+                                        <span>@{{ a[2] }}</span>
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if a[3] == 'ESCALATION' %}
+                                        <span class="badge badge-priority-critical" style="background: #fef2f2; color: #dc2626; border-color: #fecaca;">
+                                            <i class="fa-solid fa-triangle-exclamation"></i> Escalation
+                                        </span>
+                                    {% elif a[3] == 'DE_ESCALATION' %}
+                                        <span class="badge badge-status-resolved">
+                                            <i class="fa-solid fa-shield-check"></i> De-escalation
+                                        </span>
+                                    {% elif a[3] == 'STATUS_CHANGE' %}
+                                        <span class="badge badge-status-inprogress" style="background: #e0f2fe; color: #0284c7; border-color: #bae6fd;">
+                                            <i class="fa-solid fa-arrows-rotate"></i> Status Change
+                                        </span>
+                                    {% elif a[3] == 'ASSIGNMENT' %}
+                                        <span class="badge badge-category" style="background: #ecfdf5; color: #059669; border-color: #a7f3d0;">
+                                            <i class="fa-solid fa-user-check"></i> Assignment
+                                        </span>
+                                    {% elif a[3] == 'PRIORITY_CHANGE' %}
+                                        <span class="badge badge-priority-high">
+                                            <i class="fa-solid fa-arrow-up-right-dots"></i> Priority Change
+                                        </span>
+                                    {% elif a[3] == 'CATEGORY_CHANGE' %}
+                                        <span class="badge badge-category">
+                                            <i class="fa-solid fa-tag"></i> Category Change
+                                        </span>
+                                    {% elif a[3] == 'NOTE' %}
+                                        <span class="badge badge-internal-note" style="font-size: 0.75rem;">
+                                            <i class="fa-solid fa-lock"></i> Staff Note
+                                        </span>
+                                    {% elif a[3] == 'REPLY' %}
+                                        <span class="badge badge-role-user" style="font-size: 0.75rem;">
+                                            <i class="fa-solid fa-comment-dots"></i> Customer Reply
+                                        </span>
+                                    {% else %}
+                                        <span class="badge" style="background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border-medium);">
+                                            {{ a[3] }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div style="font-size: 0.88rem; color: var(--text-primary);">
+                                        {{ a[6] or '' }}
+                                    </div>
+                                    {% if a[4] or a[5] %}
+                                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem;">
+                                        <span style="text-decoration: line-through;">{{ a[4] or 'None' }}</span>
+                                        <i class="fa-solid fa-arrow-right" style="font-size: 0.7rem; margin: 0 0.25rem;"></i>
+                                        <strong>{{ a[5] or 'Updated' }}</strong>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td style="text-align: right;">
+                                    <a href="/ticket/{{ a[1] }}" class="btn btn-secondary btn-sm" title="Inspect Ticket Details">
+                                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Inspect
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon"><i class="fa-solid fa-timeline"></i></div>
+                    <h3 class="empty-title">No Audit Events Found</h3>
+                    <p class="empty-desc">No events matched the selected filter criteria. Try resetting the filters above.</p>
+                    <a href="/support-history" class="btn btn-primary" style="margin-top: 1rem;">
+                        <i class="fa-solid fa-rotate-left"></i> Reset All Filters
+                    </a>
+                </div>
+            {% endif %}
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile & Settings - HelpDesk</title>
+    <meta name="description" content="Manage your account profile, contact details, and security credentials.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="profile-brand-logo">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+                <li><a href="/create-ticket" class="nav-item"><i class="fa-solid fa-plus-circle"></i> New Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item"><i class="fa-solid fa-ticket"></i> My Tickets</a></li>
+                <li><a href="/profile" class="nav-item active"><i class="fa-solid fa-user-gear"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- Notification Bell -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% elif 'Reopened' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: {{ '#db2777' if role == 'Admin' else ('#059669' if role == 'Support' else '#4f46e5') }};">
+                        {{ username[0] if username else 'U' }}
+                    </div>
+                    <span class="user-meta-name">{{ username }}</span>
+                    {% if role == 'Admin' %}
+                        <span class="badge badge-role-admin">Admin</span>
+                    {% elif role == 'Support' %}
+                        <span class="badge badge-role-support">Support</span>
+                    {% endif %}
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-profile-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Profile Section -->
+    <main class="app-main">
+        <div class="app-container" style="max-width: 900px;">
+            
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' or category == 'error' else ('warning' if category == 'warning' else 'success') }}" style="margin-bottom: 1.5rem;">
+                            <i class="fa-solid {{ 'fa-circle-exclamation' if category == 'danger' or category == 'warning' else 'fa-circle-check' }} alert-icon"></i>
+                            <div>{{ message }}</div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <div class="page-header" style="margin-bottom: 1.5rem;">
+                <div>
+                    <h1>Account & Profile Settings</h1>
+                    <p class="text-muted">Manage your personal identification, security credentials, and platform preferences.</p>
+                </div>
+            </div>
+
+            <!-- Profile Identity Card -->
+            <div class="profile-card" style="margin-bottom: 2rem;">
+                <div class="profile-cover" style="background: linear-gradient(135deg, {{ '#4a044e 0%, #701a75 100%' if role == 'Admin' else ('#064e3b 0%, #047857 100%' if role == 'Support' else '#312e81 0%, #4f46e5 100%') }});"></div>
+                
+                <div class="profile-body">
+                    <div class="profile-avatar-large" style="background: {{ '#db2777' if role == 'Admin' else ('#059669' if role == 'Support' else '#4f46e5') }};">
+                        {{ name[0] if name else username[0] }}
+                    </div>
+
+                    <h2 class="profile-name">{{ name }}</h2>
+                    <div class="profile-username">@{{ username }}</div>
+
+                    <div style="margin-top: 0.5rem;">
+                        {% if role == 'Admin' %}
+                            <span class="badge badge-role-admin" style="font-size: 0.875rem; padding: 0.35rem 0.85rem;"><i class="fa-solid fa-shield-halved"></i> System Administrator</span>
+                        {% elif role == 'Support' %}
+                            <span class="badge badge-role-support" style="font-size: 0.875rem; padding: 0.35rem 0.85rem;"><i class="fa-solid fa-headset"></i> Support Staff Agent</span>
+                        {% else %}
+                            <span class="badge badge-role-user" style="font-size: 0.875rem; padding: 0.35rem 0.85rem;"><i class="fa-solid fa-user"></i> Standard User</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="profile-details-grid" style="margin-top: 1.5rem;">
+                        <div class="profile-detail-item">
+                            <div class="profile-detail-label">Email Address</div>
+                            <div class="profile-detail-value">{{ email }}</div>
+                        </div>
+
+                        <div class="profile-detail-item">
+                            <div class="profile-detail-label">Username Handle</div>
+                            <div class="profile-detail-value">@{{ username }}</div>
+                        </div>
+
+                        <div class="profile-detail-item">
+                            <div class="profile-detail-label">Total Tickets Created</div>
+                            <div class="profile-detail-value">{{ tickets_count if tickets_count is defined else 0 }}</div>
+                        </div>
+
+                        <div class="profile-detail-item">
+                            <div class="profile-detail-label">Resolved Tickets</div>
+                            <div class="profile-detail-value" style="color: #059669;">{{ resolved_count if resolved_count is defined else 0 }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Settings Grid -->
+            <div class="profile-forms-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem;">
+                
+                <!-- CARD 1: Edit Contact Info -->
+                <div class="card form-card">
+                    <div class="card-header-styled">
+                        <div class="card-icon-box" style="background: #eef2ff; color: #4f46e5;">
+                            <i class="fa-solid fa-user-pen"></i>
+                        </div>
+                        <div>
+                            <h3 style="font-size: 1.15rem; font-weight: 700;">Edit Profile Details</h3>
+                            <p class="text-muted" style="font-size: 0.85rem;">Update your display name and email address</p>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="/profile/update" style="padding: 1.5rem;">
+                        <div class="form-group input-with-icon">
+                            <label class="form-label" for="edit-name">Full Name <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-id-card input-icon"></i>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="edit-name" 
+                                    name="name" 
+                                    value="{{ name }}" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group input-with-icon">
+                            <label class="form-label" for="edit-email">Email Address <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-envelope input-icon"></i>
+                                <input 
+                                    type="email" 
+                                    class="form-control" 
+                                    id="edit-email" 
+                                    name="email" 
+                                    value="{{ email }}" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" value="{{ username }}" disabled style="background: var(--bg-page); color: var(--text-muted); cursor: not-allowed;">
+                            <span class="text-muted" style="font-size: 0.75rem;">Username handle is permanent and cannot be changed.</span>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block" id="btn-save-profile" style="margin-top: 1.25rem;">
+                            <i class="fa-solid fa-floppy-disk"></i> Save Profile Details
+                        </button>
+                    </form>
+                </div>
+
+                <!-- CARD 2: Change Password -->
+                <div class="card form-card">
+                    <div class="card-header-styled">
+                        <div class="card-icon-box" style="background: #fef2f2; color: #dc2626;">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <div>
+                            <h3 style="font-size: 1.15rem; font-weight: 700;">Security & Password</h3>
+                            <p class="text-muted" style="font-size: 0.85rem;">Update your account password</p>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="/profile/change-password" style="padding: 1.5rem;">
+                        <div class="form-group input-with-icon">
+                            <label class="form-label" for="current_password">Current Password <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-lock input-icon"></i>
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="current_password" 
+                                    name="current_password" 
+                                    placeholder="Enter existing password" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group input-with-icon">
+                            <label class="form-label" for="new_password">New Password <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-shield-keyhole input-icon"></i>
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="new_password" 
+                                    name="new_password" 
+                                    placeholder="Min. 4 characters" 
+                                    minlength="4" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <div class="form-group input-with-icon">
+                            <label class="form-label" for="confirm_password">Confirm New Password <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-check-double input-icon"></i>
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="confirm_password" 
+                                    name="confirm_password" 
+                                    placeholder="Re-enter new password" 
+                                    minlength="4" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-secondary btn-block" id="btn-save-password" style="margin-top: 1.25rem;">
+                            <i class="fa-solid fa-lock"></i> Update Password
+                        </button>
+                    </form>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>

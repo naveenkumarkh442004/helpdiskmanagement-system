@@ -1,0 +1,1869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administrator Control Center - HelpDesk</title>
+    <meta name="description" content="Manage users, support staff, categories, priority SLA targets, and monitor overall help desk operations.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="admin-brand-logo">
+                <div class="brand-icon" style="background: linear-gradient(135deg, #db2777 0%, #7c3aed 100%);">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item active"><i class="fa-solid fa-chart-line"></i> Admin Center</a></li>
+                <li><a href="/create-ticket" class="nav-item"><i class="fa-solid fa-plus-circle"></i> Create Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item"><i class="fa-solid fa-ticket"></i> All Tickets</a></li>
+                <li><a href="/support-history" class="nav-item"><i class="fa-solid fa-clock-rotate-left"></i> Support History</a></li>
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-id-card"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- Notification Bell -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Escalat' in n[1] or '🚨' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i>
+                                        {% elif 'Assigned' in n[1] or '📋' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: linear-gradient(135deg, #db2777 0%, #7c3aed 100%);">{{ username[0] }}</div>
+                    <span class="user-meta-name">{{ username }}</span>
+                    <span class="badge badge-role-admin">Admin</span>
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-admin-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Admin Area -->
+    <main class="app-main">
+        <div class="app-container">
+            
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' or category == 'error' else ('warning' if category == 'warning' else 'success') }}" style="margin-bottom: 1.5rem;">
+                            <i class="fa-solid {{ 'fa-circle-exclamation' if category == 'danger' or category == 'warning' else 'fa-circle-check' }} alert-icon"></i>
+                            <div>{{ message }}</div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Welcome & Executive Banner -->
+            <div class="welcome-box" style="background: linear-gradient(135deg, #3b0764 0%, #6b21a8 50%, #4338ca 100%);">
+                <div class="welcome-text">
+                    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem;">
+                        <span class="badge" style="background: rgba(255,255,255,0.2); color: #ffffff; border: 1px solid rgba(255,255,255,0.3); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">
+                            <span class="status-dot-pulse" style="width: 7px; height: 7px; display: inline-block; margin-right: 4px; background: #4ade80;"></span> System Live
+                        </span>
+                        <span style="color: rgba(255,255,255,0.8); font-size: 0.85rem;">Help Desk Operations Console</span>
+                    </div>
+                    <h1>Administrator Control Center</h1>
+                    <p>Welcome, {{ username }}! Oversee system tickets, support agent capacity, ticket categories, SLA priorities, and operational health.</p>
+                </div>
+                <div style="display: flex; gap: 0.65rem; align-items: center; flex-wrap: wrap;">
+                    <a href="/admin/operations/export" class="btn btn-secondary" id="btn-export-operations" style="background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fa-solid fa-file-csv"></i> Operations Report
+                    </a>
+                    <button class="btn btn-primary" onclick="openAddUserModal()" id="btn-add-user-modal-trigger" style="background: #ffffff; color: #6b21a8; font-weight: 700; border: none;">
+                        <i class="fa-solid fa-user-plus"></i> Add Account
+                    </button>
+                    <button class="btn btn-secondary" onclick="openAddCategoryModal()" style="background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fa-solid fa-folder-plus"></i> New Category
+                    </button>
+                    <button class="btn btn-secondary" onclick="openAddPriorityModal()" style="background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fa-solid fa-bolt"></i> SLA Priority
+                    </button>
+                </div>
+            </div>
+
+            <!-- Operations High-Level KPI Grid -->
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-purple">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.total_users if stats else 0 }}</div>
+                        <div class="stat-label">Total Accounts</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-rose" style="background: #fef2f2; color: #dc2626;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.escalated_tickets if stats else 0 }}</div>
+                        <div class="stat-label">🚨 Escalated Tickets</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: {{ '#fee2e2' if stats.overdue_tickets > 0 else '#ecfdf5' }}; color: {{ '#b91c1c' if stats.overdue_tickets > 0 else '#059669' }};">
+                        <i class="fa-solid fa-hourglass-end"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.overdue_tickets if stats else 0 }}</div>
+                        <div class="stat-label">⏳ Overdue SLA</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-indigo">
+                        <i class="fa-solid fa-ticket"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.total_tickets if stats else 0 }}</div>
+                        <div class="stat-label">System Tickets</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-amber" style="background: #fff7ed; color: #ea580c;">
+                        <i class="fa-solid fa-hand-holding-hand"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.unassigned_tickets if stats else 0 }}</div>
+                        <div class="stat-label">Unassigned Queue</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-emerald">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.resolution_rate }}%</div>
+                        <div class="stat-label">Resolution Rate</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Master Tab Navigation -->
+            <div class="admin-tab-nav" style="margin-top: 2rem; margin-bottom: 1.5rem; overflow-x: auto; white-space: nowrap;">
+                <button class="admin-tab-btn active" id="tab-btn-operations" onclick="switchAdminTab('operations')">
+                    <i class="fa-solid fa-chart-pie"></i> Operations & Monitoring
+                </button>
+                <button class="admin-tab-btn" id="tab-btn-users" onclick="switchAdminTab('users')">
+                    <i class="fa-solid fa-users-gear"></i> Users & Staff ({{ users|length if users else 0 }})
+                </button>
+                <button class="admin-tab-btn" id="tab-btn-agents" onclick="switchAdminTab('agents')">
+                    <i class="fa-solid fa-headset"></i> Support Agents ({{ agent_workloads|length if agent_workloads else 0 }})
+                </button>
+                <button class="admin-tab-btn" id="tab-btn-categories" onclick="switchAdminTab('categories')">
+                    <i class="fa-solid fa-tags"></i> Ticket Categories ({{ categories|length if categories else 0 }})
+                </button>
+                <button class="admin-tab-btn" id="tab-btn-priorities" onclick="switchAdminTab('priorities')">
+                    <i class="fa-solid fa-gauge"></i> Priorities & SLA ({{ priorities|length if priorities else 0 }})
+                </button>
+                <button class="admin-tab-btn" id="tab-btn-tickets" onclick="switchAdminTab('tickets')">
+                    <i class="fa-solid fa-ticket"></i> System-Wide Tickets ({{ tickets|length if tickets else 0 }})
+                </button>
+                <button class="admin-tab-btn" id="tab-btn-audit" onclick="switchAdminTab('audit')">
+                    <i class="fa-solid fa-timeline"></i> Audit Trail Live Feed ({{ recent_activities|length if recent_activities else 0 }})
+                </button>
+            </div>
+
+            <!-- ============================================================== -->
+            <!-- TAB 1: Help Desk Operations & Live Monitoring                  -->
+            <!-- ============================================================== -->
+            <section id="admin-tab-content-operations" class="admin-tab-section active">
+                
+                {% if stats.overdue_tickets > 0 or stats.escalated_tickets > 0 %}
+                <div class="alert alert-warning" style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.25rem; color: #d97706;"></i>
+                        <div>
+                            <strong>Operational Attention Required:</strong> 
+                            There are currently <strong>{{ stats.escalated_tickets }} escalated tickets</strong> and 
+                            <strong>{{ stats.overdue_tickets }} ticket(s) exceeding standard SLA turnaround</strong>.
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-primary" onclick="switchAdminTab('tickets'); filterAdminTickets('overdue', document.getElementById('filter-pill-overdue'));">
+                        Inspect Overdue Queue
+                    </button>
+                </div>
+                {% endif %}
+
+                <!-- Operational Analytics Grid -->
+                <div class="ops-analytics-grid">
+                    
+                    <!-- Card 1: Ticket Status Lifecycle Breakdown -->
+                    <div class="ops-card">
+                        <div class="ops-card-header">
+                            <span class="ops-card-title"><i class="fa-solid fa-arrows-spin" style="color: var(--primary);"></i> Lifecycle Status Distribution</span>
+                            <span class="badge" style="background: #eef2ff; color: var(--primary);">{{ stats.total_tickets }} Total</span>
+                        </div>
+
+                        <div class="ops-meter-item">
+                            <div class="ops-meter-header">
+                                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: #0284c7;"></span> Open Queue
+                                </span>
+                                <span>{{ stats.open_tickets }} ({{ (stats.open_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%)</span>
+                            </div>
+                            <div class="ops-meter-track">
+                                <div class="ops-meter-fill" style="width: {{ (stats.open_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%; background: #0284c7;"></div>
+                            </div>
+                        </div>
+
+                        <div class="ops-meter-item">
+                            <div class="ops-meter-header">
+                                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: #ea580c;"></span> In Progress
+                                </span>
+                                <span>{{ stats.inprogress_tickets }} ({{ (stats.inprogress_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%)</span>
+                            </div>
+                            <div class="ops-meter-track">
+                                <div class="ops-meter-fill" style="width: {{ (stats.inprogress_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%; background: #ea580c;"></div>
+                            </div>
+                        </div>
+
+                        <div class="ops-meter-item">
+                            <div class="ops-meter-header">
+                                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: #d97706;"></span> Pending
+                                </span>
+                                <span>{{ stats.pending_tickets }} ({{ (stats.pending_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%)</span>
+                            </div>
+                            <div class="ops-meter-track">
+                                <div class="ops-meter-fill" style="width: {{ (stats.pending_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%; background: #d97706;"></div>
+                            </div>
+                        </div>
+
+                        <div class="ops-meter-item">
+                            <div class="ops-meter-header">
+                                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: #059669;"></span> Resolved
+                                </span>
+                                <span>{{ stats.resolved_tickets }} ({{ (stats.resolved_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%)</span>
+                            </div>
+                            <div class="ops-meter-track">
+                                <div class="ops-meter-fill" style="width: {{ (stats.resolved_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%; background: #059669;"></div>
+                            </div>
+                        </div>
+
+                        <div class="ops-meter-item">
+                            <div class="ops-meter-header">
+                                <span style="display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="width: 8px; height: 8px; border-radius: 50%; background: #64748b;"></span> Closed / Archived
+                                </span>
+                                <span>{{ stats.closed_tickets }} ({{ (stats.closed_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%)</span>
+                            </div>
+                            <div class="ops-meter-track">
+                                <div class="ops-meter-fill" style="width: {{ (stats.closed_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%; background: #64748b;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: Priority Tiers & SLA Turnaround -->
+                    <div class="ops-card">
+                        <div class="ops-card-header">
+                            <span class="ops-card-title"><i class="fa-solid fa-gauge-high" style="color: #dc2626;"></i> Priority Tiers & SLA Targets</span>
+                            <span class="badge" style="background: #fef2f2; color: #dc2626;">{{ priorities|length }} Defined</span>
+                        </div>
+
+                        {% if priorities and priorities|length > 0 %}
+                            {% for p in priorities %}
+                            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.65rem 0; border-bottom: 1px solid var(--border-subtle);">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span class="category-swatch" style="background: {{ p[3] }};"></span>
+                                    <div>
+                                        <strong>{{ p[1] }}</strong>
+                                        <div style="font-size: 0.75rem; color: var(--text-muted);">SLA: {{ p[4] }}h turnaround</div>
+                                    </div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <span class="badge" style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-subtle); font-weight: 700;">
+                                        {{ p[7] }} Tickets
+                                    </span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-muted" style="font-size: 0.88rem;">No priority policies configured.</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Card 3: Top Issue Categories -->
+                    <div class="ops-card">
+                        <div class="ops-card-header">
+                            <span class="ops-card-title"><i class="fa-solid fa-folder-tree" style="color: #06b6d4;"></i> Top Ticket Categories</span>
+                            <button class="btn btn-ghost btn-sm" onclick="switchAdminTab('categories')" style="font-size: 0.75rem;">Manage</button>
+                        </div>
+
+                        {% if category_breakdown and category_breakdown|length > 0 %}
+                            {% for cb in category_breakdown[:5] %}
+                            <div class="ops-meter-item">
+                                <div class="ops-meter-header">
+                                    <span>{{ cb[0] }}</span>
+                                    <span>{{ cb[1] }} ({{ (cb[1] / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%)</span>
+                                </div>
+                                <div class="ops-meter-track">
+                                    <div class="ops-meter-fill" style="width: {{ (cb[1] / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%; background: #4f46e5;"></div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-muted" style="font-size: 0.88rem;">No ticket categories recorded.</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Card 4: Operations Health & Staff Readiness -->
+                    <div class="ops-card">
+                        <div class="ops-card-header">
+                            <span class="ops-card-title"><i class="fa-solid fa-heart-pulse" style="color: #10b981;"></i> Help Desk Health & Readiness</span>
+                            <span class="badge" style="background: #ecfdf5; color: #059669;"><i class="fa-solid fa-check"></i> Healthy</span>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+                                <span style="color: var(--text-secondary);"><i class="fa-solid fa-headset" style="margin-right: 0.35rem;"></i> Active Support Staff:</span>
+                                <strong>{{ stats.total_support }} Agents Online</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+                                <span style="color: var(--text-secondary);"><i class="fa-solid fa-hand-holding-hand" style="margin-right: 0.35rem;"></i> Unassigned Ratio:</span>
+                                <strong>{{ (stats.unassigned_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+                                <span style="color: var(--text-secondary);"><i class="fa-solid fa-triangle-exclamation" style="margin-right: 0.35rem;"></i> Escalation Rate:</span>
+                                <strong>{{ (stats.escalated_tickets / stats.total_tickets * 100)|round(1) if stats.total_tickets > 0 else 0 }}%</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+                                <span style="color: var(--text-secondary);"><i class="fa-solid fa-user-slash" style="margin-right: 0.35rem;"></i> Suspended Accounts:</span>
+                                <strong>{{ stats.suspended_users }}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+                                <span style="color: var(--text-secondary);"><i class="fa-solid fa-database" style="margin-right: 0.35rem;"></i> Storage Engine:</span>
+                                <span class="badge" style="background: #f1f5f9; color: var(--text-primary);">SQLite Encrypted / Local</span>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 1.25rem;">
+                            <button class="btn btn-secondary btn-sm" style="width: 100%;" onclick="switchAdminTab('agents')">
+                                <i class="fa-solid fa-sliders"></i> Open Staff Workload Console
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+
+            </section>
+
+            <!-- ============================================================== -->
+            <!-- TAB 2: User & Staff Accounts Management                        -->
+            <!-- ============================================================== -->
+            <section id="admin-tab-content-users" class="admin-tab-section" style="display: none;">
+                
+                <div class="portal-toolbar">
+                    <div class="filter-pills-group">
+                        <button class="filter-pill active" onclick="filterUserRole('all', this)">
+                            All Accounts ({{ users|length if users else 0 }})
+                        </button>
+                        <button class="filter-pill" onclick="filterUserRole('Admin', this)">
+                            <i class="fa-solid fa-shield-halved"></i> Admins ({{ stats.total_admins }})
+                        </button>
+                        <button class="filter-pill" onclick="filterUserRole('Support', this)">
+                            <i class="fa-solid fa-headset"></i> Support ({{ stats.total_support }})
+                        </button>
+                        <button class="filter-pill" onclick="filterUserRole('User', this)">
+                            <i class="fa-solid fa-user"></i> Standard Users ({{ stats.total_regular_users }})
+                        </button>
+                        <button class="filter-pill" onclick="filterUserRole('Suspended', this)" style="border-color: #fca5a5;">
+                            <i class="fa-solid fa-ban" style="color: #dc2626;"></i> Suspended ({{ stats.suspended_users }})
+                        </button>
+                    </div>
+
+                    <div style="display: flex; gap: 0.75rem; align-items: center;">
+                        <div class="search-input-wrapper">
+                            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                            <input 
+                                type="text" 
+                                id="user-search-box" 
+                                class="form-control form-control-sm search-field" 
+                                placeholder="Search name, username, email, department..." 
+                                onkeyup="searchUsersTable()"
+                            >
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="openAddUserModal()">
+                            <i class="fa-solid fa-plus"></i> New User
+                        </button>
+                    </div>
+                </div>
+
+                {% if users and users|length > 0 %}
+                    <div class="table-responsive" style="margin-top: 1rem;">
+                        <table class="custom-table" id="admin-users-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>User / Full Name</th>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Department</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Tickets</th>
+                                    <th style="text-align: right;">Account Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for u in users %}
+                                <tr 
+                                    data-role="{{ u[4] }}" 
+                                    data-status="{{ u[7] }}" 
+                                    data-name="{{ u[1]|lower }}" 
+                                    data-username="{{ u[3]|lower }}" 
+                                    data-email="{{ u[2]|lower }}"
+                                    data-dept="{{ (u[8] or '')|lower }}"
+                                >
+                                    <td><span class="table-ticket-id">#{{ u[0] }}</span></td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.65rem;">
+                                            <div class="user-avatar" style="width: 32px; height: 32px; font-size: 0.85rem; background: {{ '#db2777' if u[4] == 'Admin' else ('#059669' if u[4] == 'Support' else '#4f46e5') }};">
+                                                {{ u[1][0] if u[1] else u[3][0] }}
+                                            </div>
+                                            <div>
+                                                <strong>{{ u[1] }}</strong>
+                                                {% if u[3] == username %}
+                                                    <span class="badge" style="background: #eef2ff; color: #4f46e5; font-size: 0.7rem; margin-left: 0.25rem;">You</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge" style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-medium);">@{{ u[3] }}</span></td>
+                                    <td style="color: var(--text-secondary); font-size: 0.9rem;">{{ u[2] }}</td>
+                                    <td><span class="badge" style="background: #f1f5f9; color: #475569;">{{ u[8] or 'General' }}</span></td>
+                                    <td>
+                                        {% if u[4] == 'Admin' %}
+                                            <span class="badge badge-role-admin"><i class="fa-solid fa-shield-halved"></i> Admin</span>
+                                        {% elif u[4] == 'Support' %}
+                                            <span class="badge badge-role-support"><i class="fa-solid fa-headset"></i> Support</span>
+                                        {% else %}
+                                            <span class="badge badge-role-user"><i class="fa-solid fa-user"></i> User</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if u[7] == 'Suspended' %}
+                                            <span class="badge badge-priority-critical"><i class="fa-solid fa-ban"></i> Suspended</span>
+                                        {% else %}
+                                            <span class="badge badge-status-resolved"><i class="fa-solid fa-circle-check"></i> Active</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="table-ticket-id">{{ u[6] }}</span></td>
+                                    <td style="text-align: right;">
+                                        <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                                            <!-- Edit User Button -->
+                                            <button 
+                                                class="btn btn-secondary btn-sm" 
+                                                title="Edit User Details"
+                                                onclick="openEditUserModal('{{ u[0] }}', '{{ u[1]|escape }}', '{{ u[2]|escape }}', '{{ u[4] }}', '{{ u[8]|default('General')|escape }}', '{{ u[7]|default('Active') }}')"
+                                                style="padding: 0.25rem 0.5rem;"
+                                            >
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </button>
+
+                                            <!-- Toggle Status Button -->
+                                            {% if u[3] != username %}
+                                            <form method="POST" action="/admin/user/{{ u[0] }}/toggle-status" style="display: inline; margin: 0;">
+                                                <button 
+                                                    type="submit" 
+                                                    class="btn btn-sm" 
+                                                    title="{{ 'Unsuspend Account' if u[7] == 'Suspended' else 'Suspend Account' }}"
+                                                    style="padding: 0.25rem 0.5rem; background: {{ '#ecfdf5' if u[7] == 'Suspended' else '#fff1f2' }}; color: {{ '#059669' if u[7] == 'Suspended' else '#e11d48' }}; border: 1px solid {{ '#a7f3d0' if u[7] == 'Suspended' else '#fecdd3' }};"
+                                                >
+                                                    <i class="fa-solid {{ 'fa-user-check' if u[7] == 'Suspended' else 'fa-user-slash' }}"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+
+                                            <!-- Reset Password Button -->
+                                            <button 
+                                                class="btn btn-secondary btn-sm" 
+                                                title="Reset User Password"
+                                                onclick="openResetPasswordModal('{{ u[0] }}', '{{ u[3]|escape }}')"
+                                                style="padding: 0.25rem 0.5rem;"
+                                            >
+                                                <i class="fa-solid fa-key"></i>
+                                            </button>
+                                            
+                                            <!-- Delete User Button -->
+                                            {% if u[3] != username %}
+                                            <form method="POST" action="/admin/user/{{ u[0] }}/delete" style="display: inline; margin: 0;" onsubmit="return confirm('Permanently delete account for {{ u[1] }}?');">
+                                                <button type="submit" class="btn btn-ghost btn-sm" style="color: #dc2626; padding: 0.25rem 0.5rem;" title="Delete User">
+                                                    <i class="fa-solid fa-trash-can"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fa-solid fa-users-slash"></i></div>
+                        <h3 class="empty-title">No Accounts Registered</h3>
+                    </div>
+                {% endif %}
+            </section>
+
+            <!-- ============================================================== -->
+            <!-- TAB 3: Support Agents & Workload Console                       -->
+            <!-- ============================================================== -->
+            <section id="admin-tab-content-agents" class="admin-tab-section" style="display: none;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+                    <div>
+                        <h3>Support Staff Capacity & Workload Rebalancing</h3>
+                        <p class="text-muted" style="font-size: 0.88rem;">Monitor active tickets per agent, resolution performance, and transfer queues seamlessly.</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="openReassignWorkloadModal()">
+                        <i class="fa-solid fa-shuffle"></i> Rebalance Workload Across Agents
+                    </button>
+                </div>
+
+                <!-- Agent Capacity Grid -->
+                <div class="agent-grid">
+                    {% if agent_workloads and agent_workloads|length > 0 %}
+                        {% for agent in agent_workloads %}
+                        <div class="agent-card">
+                            <div>
+                                <div class="agent-card-header">
+                                    <div class="user-avatar" style="width: 44px; height: 44px; font-size: 1.15rem; background: {{ '#db2777' if agent.role == 'Admin' else '#059669' }};">
+                                        {{ agent.name[0] if agent.name else agent.username[0] }}
+                                    </div>
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 1.05rem;">{{ agent.name }}</div>
+                                        <div style="font-size: 0.85rem; color: var(--text-muted);">
+                                            @{{ agent.username }} &bull; <span class="badge" style="font-size: 0.7rem; padding: 0.1rem 0.4rem;">{{ agent.department }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="agent-stats-row">
+                                    <div>
+                                        <div class="agent-stat-number" style="color: {{ '#ea580c' if agent.active_tickets > 3 else '#0284c7' }};">{{ agent.active_tickets }}</div>
+                                        <div class="agent-stat-label">Active Queue</div>
+                                    </div>
+                                    <div>
+                                        <div class="agent-stat-number" style="color: #059669;">{{ agent.resolved_tickets }}</div>
+                                        <div class="agent-stat-label">Resolved</div>
+                                    </div>
+                                    <div>
+                                        <div class="agent-stat-number">{{ agent.efficiency }}%</div>
+                                        <div class="agent-stat-label">Efficiency</div>
+                                    </div>
+                                </div>
+
+                                <!-- Progress bar for agent workload -->
+                                <div style="margin-bottom: 1rem;">
+                                    <div style="display: flex; justify-content: space-between; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.35rem;">
+                                        <span>Workload Utilization</span>
+                                        <span>{{ agent.total_assigned }} Total</span>
+                                    </div>
+                                    <div class="ops-meter-track">
+                                        <div class="ops-meter-fill" style="width: {{ [agent.active_tickets * 15, 100]|min }}%; background: {{ '#dc2626' if agent.active_tickets > 5 else ('#ea580c' if agent.active_tickets > 2 else '#059669') }};"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 0.5rem; justify-content: space-between; border-top: 1px solid var(--border-subtle); padding-top: 0.85rem;">
+                                <a href="/my-tickets?assigned_to={{ agent.username }}" class="btn btn-secondary btn-sm" style="flex: 1; text-align: center;">
+                                    <i class="fa-solid fa-list-check"></i> View Queue
+                                </a>
+                                <button class="btn btn-ghost btn-sm" onclick="openReassignFromAgentModal('{{ agent.username }}')" title="Transfer tickets away from this agent">
+                                    <i class="fa-solid fa-arrow-right-arrow-left"></i> Reassign
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state" style="grid-column: 1 / -1;">
+                            <div class="empty-icon"><i class="fa-solid fa-user-headset"></i></div>
+                            <h3 class="empty-title">No Active Support Agents</h3>
+                        </div>
+                    {% endif %}
+                </div>
+
+            </section>
+
+            <!-- ============================================================== -->
+            <!-- TAB 4: Ticket Categories Management                            -->
+            <!-- ============================================================== -->
+            <section id="admin-tab-content-categories" class="admin-tab-section" style="display: none;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+                    <div>
+                        <h3>Service & Issue Categories Management</h3>
+                        <p class="text-muted" style="font-size: 0.88rem;">Define ticket taxonomy, icons, brand colors, and control active categories for user submissions.</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="openAddCategoryModal()">
+                        <i class="fa-solid fa-folder-plus"></i> Add New Category
+                    </button>
+                </div>
+
+                {% if categories and categories|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Category Preview</th>
+                                    <th>Description</th>
+                                    <th>Status</th>
+                                    <th>Active Tickets</th>
+                                    <th>Created</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for cat in categories %}
+                                <tr>
+                                    <td><span class="table-ticket-id">#{{ cat[0] }}</span></td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.65rem;">
+                                            <div style="width: 32px; height: 32px; border-radius: var(--radius-sm); background: {{ cat[3] }}20; color: {{ cat[3] }}; display: flex; align-items: center; justify-content: center; font-size: 1rem; border: 1px solid {{ cat[3] }}40;">
+                                                <i class="fa-solid {{ cat[4] or 'fa-ticket' }}"></i>
+                                            </div>
+                                            <div>
+                                                <strong>{{ cat[1] }}</strong>
+                                                <div style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">{{ cat[3] }}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="color: var(--text-secondary); font-size: 0.88rem; max-width: 320px;">
+                                        {{ cat[2] or 'No description provided.' }}
+                                    </td>
+                                    <td>
+                                        {% if cat[5] == 1 %}
+                                            <span class="badge badge-status-resolved"><i class="fa-solid fa-check"></i> Active</span>
+                                        {% else %}
+                                            <span class="badge badge-status-closed"><i class="fa-solid fa-pause"></i> Disabled</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge" style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-medium); font-weight: 700;">
+                                            {{ cat[7] }} Tickets
+                                        </span>
+                                    </td>
+                                    <td class="table-date">{{ cat[6] }}</td>
+                                    <td style="text-align: right;">
+                                        <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                                            <!-- Edit Category Button -->
+                                            <button 
+                                                class="btn btn-secondary btn-sm" 
+                                                onclick="openEditCategoryModal('{{ cat[0] }}', '{{ cat[1]|escape }}', '{{ cat[2]|default('')|escape }}', '{{ cat[3]|default('#4f46e5') }}', '{{ cat[4]|default('fa-ticket') }}', '{{ cat[5] }}')"
+                                                title="Edit Category"
+                                                style="padding: 0.25rem 0.55rem;"
+                                            >
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </button>
+
+                                            <!-- Toggle Status Button -->
+                                            <form method="POST" action="/admin/category/{{ cat[0] }}/toggle-status" style="display: inline; margin: 0;">
+                                                <button 
+                                                    type="submit" 
+                                                    class="btn btn-sm" 
+                                                    title="{{ 'Disable Category' if cat[5] == 1 else 'Enable Category' }}"
+                                                    style="padding: 0.25rem 0.55rem; background: {{ '#fff1f2' if cat[5] == 1 else '#ecfdf5' }}; color: {{ '#e11d48' if cat[5] == 1 else '#059669' }}; border: 1px solid {{ '#fecdd3' if cat[5] == 1 else '#a7f3d0' }};"
+                                                >
+                                                    <i class="fa-solid {{ 'fa-pause' if cat[5] == 1 else 'fa-play' }}"></i>
+                                                </button>
+                                            </form>
+
+                                            <!-- Delete Category Button -->
+                                            <form method="POST" action="/admin/category/{{ cat[0] }}/delete" style="display: inline; margin: 0;" onsubmit="return confirm('Delete category {{ cat[1] }}? If tickets use this category, it will be safely disabled instead.');">
+                                                <button type="submit" class="btn btn-ghost btn-sm" style="color: #dc2626; padding: 0.25rem 0.55rem;" title="Delete Category">
+                                                    <i class="fa-solid fa-trash-can"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fa-solid fa-folder-open"></i></div>
+                        <h3 class="empty-title">No Categories Configured</h3>
+                    </div>
+                {% endif %}
+
+            </section>
+
+            <!-- ============================================================== -->
+            <!-- TAB 5: Priorities & SLA Policies Configuration                 -->
+            <!-- ============================================================== -->
+            <section id="admin-tab-content-priorities" class="admin-tab-section" style="display: none;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+                    <div>
+                        <h3>Priority Tiers & Service Level Agreement (SLA) Policies</h3>
+                        <p class="text-muted" style="font-size: 0.88rem;">Configure turnaround targets, level hierarchy, and automated overdue tracking thresholds.</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="openAddPriorityModal()">
+                        <i class="fa-solid fa-plus-circle"></i> Add Priority Tier
+                    </button>
+                </div>
+
+                <div class="alert alert-info" style="margin-bottom: 1.5rem; background: #f0fdf4; border-color: #bbf7d0; color: #166534;">
+                    <i class="fa-solid fa-circle-info alert-icon" style="color: #16a34a;"></i>
+                    <div>
+                        <strong>SLA Compliance Engine:</strong> Tickets left unresolved past their tier's SLA turnaround hours are automatically marked with 
+                        <span class="badge badge-overdue" style="font-size: 0.75rem; margin: 0 4px;"><i class="fa-solid fa-hourglass-end"></i> Overdue SLA</span> 
+                        and flagged to supervisors for expedited resolution.
+                    </div>
+                </div>
+
+                {% if priorities and priorities|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Tier Ranking</th>
+                                    <th>Priority Name</th>
+                                    <th>SLA Target</th>
+                                    <th>Usage Policy / Description</th>
+                                    <th>Status</th>
+                                    <th>Active Tickets</th>
+                                    <th style="text-align: right;">Policy Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for prio in priorities %}
+                                <tr>
+                                    <td>
+                                        <span class="badge" style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-medium); font-weight: 700;">
+                                            Level {{ prio[2] }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                            <span class="category-swatch" style="background: {{ prio[3] }};"></span>
+                                            <strong>{{ prio[1] }}</strong>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-sla">
+                                            <i class="fa-solid fa-stopwatch"></i> {{ prio[4] }} Hours
+                                        </span>
+                                    </td>
+                                    <td style="color: var(--text-secondary); font-size: 0.88rem; max-width: 320px;">
+                                        {{ prio[5] or 'Standard resolution protocol.' }}
+                                    </td>
+                                    <td>
+                                        {% if prio[6] == 1 %}
+                                            <span class="badge badge-status-resolved"><i class="fa-solid fa-check"></i> Enforced</span>
+                                        {% else %}
+                                            <span class="badge badge-status-closed"><i class="fa-solid fa-pause"></i> Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge" style="background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-medium); font-weight: 700;">
+                                            {{ prio[7] }} Tickets
+                                        </span>
+                                    </td>
+                                    <td style="text-align: right;">
+                                        <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                                            <!-- Edit Priority Button -->
+                                            <button 
+                                                class="btn btn-secondary btn-sm" 
+                                                onclick="openEditPriorityModal('{{ prio[0] }}', '{{ prio[1]|escape }}', '{{ prio[2] }}', '{{ prio[3]|default('#4f46e5') }}', '{{ prio[4] }}', '{{ prio[5]|default('')|escape }}', '{{ prio[6] }}')"
+                                                title="Edit Priority Policy"
+                                                style="padding: 0.25rem 0.55rem;"
+                                            >
+                                                <i class="fa-solid fa-pen-to-square"></i>
+                                            </button>
+
+                                            <!-- Toggle Status Button -->
+                                            <form method="POST" action="/admin/priority/{{ prio[0] }}/toggle-status" style="display: inline; margin: 0;">
+                                                <button 
+                                                    type="submit" 
+                                                    class="btn btn-sm" 
+                                                    title="{{ 'Disable Priority' if prio[6] == 1 else 'Enable Priority' }}"
+                                                    style="padding: 0.25rem 0.55rem; background: {{ '#fff1f2' if prio[6] == 1 else '#ecfdf5' }}; color: {{ '#e11d48' if prio[6] == 1 else '#059669' }}; border: 1px solid {{ '#fecdd3' if prio[6] == 1 else '#a7f3d0' }};"
+                                                >
+                                                    <i class="fa-solid {{ 'fa-pause' if prio[6] == 1 else 'fa-play' }}"></i>
+                                                </button>
+                                            </form>
+
+                                            <!-- Delete Priority Button -->
+                                            <form method="POST" action="/admin/priority/{{ prio[0] }}/delete" style="display: inline; margin: 0;" onsubmit="return confirm('Delete priority tier {{ prio[1] }}?');">
+                                                <button type="submit" class="btn btn-ghost btn-sm" style="color: #dc2626; padding: 0.25rem 0.55rem;" title="Delete Priority">
+                                                    <i class="fa-solid fa-trash-can"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fa-solid fa-gauge"></i></div>
+                        <h3 class="empty-title">No Priority Policies Configured</h3>
+                    </div>
+                {% endif %}
+
+            </section>
+
+            <!-- ============================================================== -->
+            <!-- TAB 6: System-Wide Tickets & Bulk Operations Console           -->
+            <!-- ============================================================== -->
+            <section id="admin-tab-content-tickets" class="admin-tab-section" style="display: none;">
+                
+                <div class="portal-toolbar">
+                    <div class="filter-pills-group">
+                        <button class="filter-pill active" onclick="filterAdminTickets('all', this)">
+                            All ({{ tickets|length if tickets else 0 }})
+                        </button>
+                        <button class="filter-pill" id="filter-pill-overdue" onclick="filterAdminTickets('overdue', this)" style="border-color: #fca5a5;">
+                            <i class="fa-solid fa-hourglass-end" style="color: #dc2626;"></i> ⏳ Overdue SLA ({{ stats.overdue_tickets }})
+                        </button>
+                        <button class="filter-pill" onclick="filterAdminTickets('escalated', this)" style="border-color: #fca5a5;">
+                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i> 🚨 Escalated ({{ stats.escalated_tickets }})
+                        </button>
+                        <button class="filter-pill" onclick="filterAdminTickets('unassigned', this)">
+                            <i class="fa-solid fa-hand-holding-hand" style="color: #ea580c;"></i> Unassigned ({{ stats.unassigned_tickets }})
+                        </button>
+                        <button class="filter-pill" onclick="filterAdminTickets('Open', this)">
+                            <span class="badge-dot" style="background: #0284c7;"></span> Open ({{ stats.open_tickets }})
+                        </button>
+                        <button class="filter-pill" onclick="filterAdminTickets('In Progress', this)">
+                            <span class="badge-dot" style="background: #ea580c;"></span> In Progress ({{ stats.inprogress_tickets }})
+                        </button>
+                        <button class="filter-pill" onclick="filterAdminTickets('Pending', this)">
+                            <i class="fa-solid fa-hourglass-half" style="color: #d97706;"></i> Pending ({{ stats.pending_tickets }})
+                        </button>
+                        <button class="filter-pill" onclick="filterAdminTickets('Resolved', this)">
+                            <span class="badge-dot" style="background: #059669;"></span> Resolved ({{ stats.resolved_tickets }})
+                        </button>
+                    </div>
+
+                    <div class="search-input-wrapper">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input 
+                            type="text" 
+                            id="admin-ticket-search" 
+                            class="form-control form-control-sm search-field" 
+                            placeholder="Search ticket subject, requester, agent, category..." 
+                            onkeyup="searchAdminTickets()"
+                        >
+                    </div>
+                </div>
+
+                <!-- Sticky Bulk Actions Toolbar -->
+                <div id="bulkActionsToolbar" class="bulk-actions-bar" style="display: none;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-check-double" style="color: #38bdf8;"></i>
+                        <span id="selectedTicketsCounter" style="font-weight: 700;">0 Tickets Selected</span>
+                    </div>
+
+                    <div class="bulk-actions-controls">
+                        <!-- Bulk Assign -->
+                        <form method="POST" action="/admin/tickets/bulk-action" id="bulkAssignForm" style="display: inline-flex; align-items: center; gap: 0.35rem; margin: 0;">
+                            <input type="hidden" name="ticket_ids" class="bulk-ticket-ids-input">
+                            <input type="hidden" name="bulk_action" value="assign">
+                            <select name="target_value" class="form-control form-control-sm" style="width: auto; padding: 0.25rem 0.5rem; background: #1e293b; color: #fff; border-color: #334155;" required>
+                                <option value="" disabled selected>Assign to Agent...</option>
+                                {% for s in staff_list %}
+                                <option value="{{ s[1] }}">@{{ s[1] }} ({{ s[2] }})</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.6rem;">Assign</button>
+                        </form>
+
+                        <!-- Bulk Status Change -->
+                        <form method="POST" action="/admin/tickets/bulk-action" id="bulkStatusForm" style="display: inline-flex; align-items: center; gap: 0.35rem; margin: 0;">
+                            <input type="hidden" name="ticket_ids" class="bulk-ticket-ids-input">
+                            <input type="hidden" name="bulk_action" value="status">
+                            <select name="target_value" class="form-control form-control-sm" style="width: auto; padding: 0.25rem 0.5rem; background: #1e293b; color: #fff; border-color: #334155;" required>
+                                <option value="" disabled selected>Update Status...</option>
+                                <option value="Open">Open</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Resolved">Resolved</option>
+                                <option value="Closed">Closed</option>
+                            </select>
+                            <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.6rem;">Update</button>
+                        </form>
+
+                        <!-- Bulk Priority Bump -->
+                        <form method="POST" action="/admin/tickets/bulk-action" id="bulkPriorityForm" style="display: inline-flex; align-items: center; gap: 0.35rem; margin: 0;">
+                            <input type="hidden" name="ticket_ids" class="bulk-ticket-ids-input">
+                            <input type="hidden" name="bulk_action" value="priority">
+                            <select name="target_value" class="form-control form-control-sm" style="width: auto; padding: 0.25rem 0.5rem; background: #1e293b; color: #fff; border-color: #334155;" required>
+                                <option value="" disabled selected>Change Priority...</option>
+                                <option value="Critical">Critical</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                            </select>
+                            <button type="submit" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.6rem;">Set</button>
+                        </form>
+
+                        <button type="button" onclick="clearSelectedTickets()" class="btn btn-ghost btn-sm" style="color: #94a3b8; font-size: 0.8rem;">
+                            Deselect All
+                        </button>
+                    </div>
+                </div>
+
+                {% if tickets and tickets|length > 0 %}
+                    <div class="table-responsive" style="margin-top: 1rem;">
+                        <table class="custom-table" id="admin-tickets-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 36px;">
+                                        <input type="checkbox" id="selectAllTicketsCheckbox" onclick="toggleSelectAllTickets(this)">
+                                    </th>
+                                    <th>Ticket ID</th>
+                                    <th>Requester</th>
+                                    <th>Subject</th>
+                                    <th>Assigned Staff</th>
+                                    <th>Category</th>
+                                    <th>Priority & SLA</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ticket in tickets %}
+                                <tr 
+                                    data-status="{{ ticket.status }}" 
+                                    data-priority="{{ ticket.priority }}" 
+                                    data-assigned="{{ ticket.assigned_to or '' }}"
+                                    data-escalated="{{ 'true' if ticket.is_escalated else 'false' }}"
+                                    data-overdue="{{ 'true' if ticket.is_overdue else 'false' }}"
+                                    data-search="{{ (ticket.id ~ ' ' ~ ticket.subject ~ ' ' ~ ticket.username ~ ' ' ~ ticket.category ~ ' ' ~ (ticket.assigned_to or 'unassigned') ~ ' ' ~ (ticket.escalation_level or ''))|lower }}"
+                                >
+                                    <td>
+                                        <input type="checkbox" class="ticket-select-chk" value="{{ ticket.id }}" onchange="updateSelectedTicketsCount()">
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.35rem;">
+                                            <a href="/ticket/{{ ticket.id }}" class="table-ticket-id">#{{ ticket.id }}</a>
+                                            {% if ticket.is_escalated %}
+                                                <span class="badge badge-priority-critical" style="font-size: 0.65rem; padding: 0.15rem 0.35rem;" title="Escalation: {{ ticket.escalation_level }}">
+                                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                                </span>
+                                            {% endif %}
+                                            {% if ticket.is_overdue %}
+                                                <span class="badge badge-overdue" style="font-size: 0.65rem; padding: 0.15rem 0.35rem;" title="Overdue: {{ ticket.hours_elapsed }}h elapsed (SLA: {{ ticket.sla_hours }}h)">
+                                                    <i class="fa-solid fa-hourglass-end"></i>
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                            <div class="user-avatar" style="width: 24px; height: 24px; font-size: 0.7rem;">{{ ticket.username[0] }}</div>
+                                            <strong>{{ ticket.username }}</strong>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <a href="/ticket/{{ ticket.id }}" style="text-decoration: none; color: inherit;">
+                                            <strong class="table-subject">{{ ticket.subject }}</strong>
+                                        </a>
+                                        {% if ticket.is_escalated %}
+                                        <div style="margin-top: 0.2rem;">
+                                            <span class="badge" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 0.7rem;">
+                                                <i class="fa-solid fa-bolt"></i> {{ ticket.escalation_level }}
+                                            </span>
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if ticket.assigned_to %}
+                                            <span class="table-agent-badge">
+                                                <span class="table-agent-avatar">{{ ticket.assigned_to[0] }}</span>
+                                                <span>@{{ ticket.assigned_to }}</span>
+                                            </span>
+                                        {% else %}
+                                            <span class="table-agent-badge unassigned">
+                                                <i class="fa-solid fa-triangle-exclamation"></i> Unassigned
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="badge badge-category">{{ ticket.category }}</span></td>
+                                    <td>
+                                        <div>
+                                            {% if ticket.priority == 'Critical' %}
+                                                <span class="badge badge-priority-critical"><i class="fa-solid fa-circle-exclamation"></i> Critical</span>
+                                            {% elif ticket.priority == 'High' %}
+                                                <span class="badge badge-priority-high"><i class="fa-solid fa-arrow-up"></i> High</span>
+                                            {% elif ticket.priority == 'Medium' %}
+                                                <span class="badge badge-priority-medium"><i class="fa-solid fa-minus"></i> Medium</span>
+                                            {% else %}
+                                                <span class="badge badge-priority-low"><i class="fa-solid fa-arrow-down"></i> Low</span>
+                                            {% endif %}
+                                            
+                                            {% if ticket.is_overdue %}
+                                                <div style="margin-top: 0.25rem;">
+                                                    <span class="badge badge-overdue" style="font-size: 0.65rem;">
+                                                        Exceeded {{ ticket.sla_hours }}h SLA
+                                                    </span>
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if ticket.status == 'Open' %}
+                                            <span class="badge badge-status-open"><span class="badge-dot"></span> Open</span>
+                                        {% elif ticket.status == 'In Progress' %}
+                                            <span class="badge badge-status-inprogress"><span class="badge-dot"></span> In Progress</span>
+                                        {% elif ticket.status == 'Pending' %}
+                                            <span class="badge badge-status-inprogress" style="background: #fef3c7; color: #b45309;"><i class="fa-solid fa-hourglass-half"></i> Pending</span>
+                                        {% elif ticket.status == 'Resolved' %}
+                                            <span class="badge badge-status-resolved"><span class="badge-dot"></span> Resolved</span>
+                                        {% else %}
+                                            <span class="badge badge-status-closed"><span class="badge-dot"></span> {{ ticket.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="table-date">{{ ticket.created_at }}</td>
+                                    <td style="text-align: right;">
+                                        <a href="/ticket/{{ ticket.id }}" class="btn btn-primary btn-sm">
+                                            <i class="fa-solid fa-sliders"></i> Manage
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fa-solid fa-ticket-simple"></i></div>
+                        <h3 class="empty-title">No Tickets Recorded</h3>
+                    </div>
+                {% endif %}
+            </section>
+
+            <!-- ============================================================== -->
+            <!-- TAB 7: Audit Trail Live Feed                                   -->
+            <!-- ============================================================== -->
+            <section id="admin-tab-content-audit" class="admin-tab-section" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+                    <div>
+                        <h3>Audit Trail Live Feed</h3>
+                        <p class="text-muted" style="font-size: 0.88rem;">Live system-wide event log capturing state updates, escalations, assignments, and administrative decisions.</p>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <a href="/support-history/export" class="btn btn-secondary btn-sm">
+                            <i class="fa-solid fa-download"></i> Export Audit Log (CSV)
+                        </a>
+                        <a href="/support-history" class="btn btn-primary btn-sm">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Full Support History Portal
+                        </a>
+                    </div>
+                </div>
+
+                {% if recent_activities and recent_activities|length > 0 %}
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Event ID</th>
+                                    <th>Timestamp</th>
+                                    <th>Ticket</th>
+                                    <th>Actor</th>
+                                    <th>Event Type</th>
+                                    <th>Message / Transition</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for act in recent_activities %}
+                                <tr>
+                                    <td><span class="table-ticket-id">#{{ act[0] }}</span></td>
+                                    <td class="table-date">{{ act[7] }}</td>
+                                    <td>
+                                        <a href="/ticket/{{ act[1] }}" style="font-weight: 600; text-decoration: none; color: inherit;">
+                                            Ticket #{{ act[1] }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="table-agent-badge">
+                                            <span class="table-agent-avatar" style="width: 20px; height: 20px; font-size: 0.65rem;">{{ act[2][0] }}</span>
+                                            <span>@{{ act[2] }}</span>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if act[3] == 'ESCALATION' %}
+                                            <span class="badge badge-priority-critical"><i class="fa-solid fa-triangle-exclamation"></i> Escalation</span>
+                                        {% elif act[3] == 'DE_ESCALATION' %}
+                                            <span class="badge badge-status-resolved"><i class="fa-solid fa-shield-check"></i> De-escalated</span>
+                                        {% elif act[3] == 'STATUS_CHANGE' %}
+                                            <span class="badge badge-status-inprogress"><i class="fa-solid fa-arrows-rotate"></i> Status</span>
+                                        {% elif act[3] == 'ASSIGNMENT' %}
+                                            <span class="badge badge-category"><i class="fa-solid fa-user-check"></i> Assignment</span>
+                                        {% elif act[3] == 'PRIORITY_CHANGE' %}
+                                            <span class="badge badge-priority-high"><i class="fa-solid fa-bolt"></i> Priority</span>
+                                        {% else %}
+                                            <span class="badge">{{ act[3] }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td style="font-size: 0.88rem;">{{ act[6] or (act[4] ~ ' &rarr; ' ~ act[5]) }}</td>
+                                    <td style="text-align: right;">
+                                        <a href="/ticket/{{ act[1] }}" class="btn btn-secondary btn-sm">Inspect</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fa-solid fa-timeline"></i></div>
+                        <h3 class="empty-title">No Audit Events Logged</h3>
+                    </div>
+                {% endif %}
+            </section>
+
+        </div>
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- MODALS SECTION                                                      -->
+    <!-- =================================================================== -->
+
+    <!-- Modal 1: Add New User / Staff -->
+    <div id="addUserModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-user-plus" style="color: var(--primary);"></i> Create Account</div>
+                <button type="button" onclick="closeAddUserModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" action="/admin/user/create">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="new_name">Full Name <span class="required">*</span></label>
+                        <input type="text" name="name" id="new_name" class="form-control" placeholder="e.g. Sarah Connor" required>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="new_email">Email Address <span class="required">*</span></label>
+                        <input type="email" name="email" id="new_email" class="form-control" placeholder="sarah@example.com" required>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="new_username">Username <span class="required">*</span></label>
+                        <input type="text" name="username" id="new_username" class="form-control" placeholder="sarah_connor" required>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="new_password">Initial Password <span class="required">*</span></label>
+                        <input type="password" name="password" id="new_password" class="form-control" placeholder="••••••••" required>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="new_role">Assigned Role</label>
+                            <select name="role" id="new_role" class="form-control">
+                                <option value="User">User (Standard Customer)</option>
+                                <option value="Support">Support (Support Agent)</option>
+                                <option value="Admin">Admin (Full System Administrator)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="new_department">Department</label>
+                            <input type="text" name="department" id="new_department" class="form-control" placeholder="IT, Support, Billing...">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="new_status">Account Status</label>
+                        <select name="status" id="new_status" class="form-control">
+                            <option value="Active">Active</option>
+                            <option value="Suspended">Suspended</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeAddUserModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Create Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 2: Edit Existing User -->
+    <div id="editUserModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-user-pen" style="color: var(--primary);"></i> Edit User Account</div>
+                <button type="button" onclick="closeEditUserModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" id="editUserForm" action="">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="edit_user_name">Full Name <span class="required">*</span></label>
+                        <input type="text" name="name" id="edit_user_name" class="form-control" required>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="edit_user_email">Email Address <span class="required">*</span></label>
+                        <input type="email" name="email" id="edit_user_email" class="form-control" required>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="edit_user_role">Role</label>
+                            <select name="role" id="edit_user_role" class="form-control">
+                                <option value="User">User</option>
+                                <option value="Support">Support</option>
+                                <option value="Admin">Admin</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="edit_user_department">Department</label>
+                            <input type="text" name="department" id="edit_user_department" class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="edit_user_status">Account Status</label>
+                        <select name="status" id="edit_user_status" class="form-control">
+                            <option value="Active">Active</option>
+                            <option value="Suspended">Suspended</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeEditUserModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 3: Reset Password Modal -->
+    <div id="resetPasswordModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-key" style="color: #ea580c;"></i> Reset User Password</div>
+                <button type="button" onclick="closeResetPasswordModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" id="resetPasswordForm" action="">
+                <div class="modal-body">
+                    <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        Resetting password for user <strong id="reset_password_target_name">@username</strong>. Set an immediate temporary or permanent password.
+                    </p>
+
+                    <div class="form-group">
+                        <label class="form-label" for="reset_new_password">New Password (min 4 chars) <span class="required">*</span></label>
+                        <input type="password" name="new_password" id="reset_new_password" class="form-control" placeholder="••••••••" required>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeResetPasswordModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary" style="background: #ea580c; border-color: #ea580c;"><i class="fa-solid fa-check"></i> Set Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 4: Reassign Agent Workload -->
+    <div id="reassignWorkloadModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-shuffle" style="color: var(--primary);"></i> Reassign Agent Workload</div>
+                <button type="button" onclick="closeReassignWorkloadModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" action="/admin/agents/reassign-workload">
+                <div class="modal-body">
+                    <p style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                        Transfer all currently active (Open, In Progress, Pending) tickets from one support agent to another.
+                    </p>
+
+                    <div class="form-group">
+                        <label class="form-label" for="source_agent_select">Source Agent (Transfer From) <span class="required">*</span></label>
+                        <select name="source_agent" id="source_agent_select" class="form-control" required>
+                            <option value="" disabled selected>Select Source Agent...</option>
+                            {% for agent in agent_workloads %}
+                            <option value="{{ agent.username }}">{{ agent.name }} (@{{ agent.username }}) - {{ agent.active_tickets }} active tickets</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="target_agent_select">Destination Agent (Transfer To) <span class="required">*</span></label>
+                        <select name="target_agent" id="target_agent_select" class="form-control" required>
+                            <option value="" disabled selected>Select Destination Agent...</option>
+                            {% for agent in agent_workloads %}
+                            <option value="{{ agent.username }}">{{ agent.name }} (@{{ agent.username }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="workload_reason">Reason for Transfer</label>
+                        <input type="text" name="reason" id="workload_reason" class="form-control" placeholder="e.g. Vacation coverage, sick leave, load balancing">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeReassignWorkloadModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-arrows-split-up-and-left"></i> Execute Transfer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 5: Add New Ticket Category -->
+    <div id="addCategoryModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-folder-plus" style="color: var(--primary);"></i> Add Ticket Category</div>
+                <button type="button" onclick="closeAddCategoryModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" action="/admin/category/create">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="new_cat_name">Category Name <span class="required">*</span></label>
+                        <input type="text" name="name" id="new_cat_name" class="form-control" placeholder="e.g. Cloud Infrastructure" required>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="new_cat_desc">Description / Scope</label>
+                        <textarea name="description" id="new_cat_desc" class="form-control" rows="2" placeholder="Brief explanation of when users should select this category..."></textarea>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="new_cat_color">Badge Color</label>
+                            <input type="color" name="color" id="new_cat_color" class="form-control" value="#4f46e5" style="height: 38px; padding: 2px 4px; cursor: pointer;">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="new_cat_icon">FontAwesome Icon</label>
+                            <select name="icon" id="new_cat_icon" class="form-control">
+                                <option value="fa-ticket">fa-ticket (Standard Ticket)</option>
+                                <option value="fa-laptop-code">fa-laptop-code (Technical)</option>
+                                <option value="fa-box-open">fa-box-open (Software)</option>
+                                <option value="fa-desktop">fa-desktop (Hardware)</option>
+                                <option value="fa-wifi">fa-wifi (Network)</option>
+                                <option value="fa-key">fa-key (Account & Security)</option>
+                                <option value="fa-credit-card">fa-credit-card (Billing)</option>
+                                <option value="fa-shield-halved">fa-shield-halved (Security)</option>
+                                <option value="fa-lightbulb">fa-lightbulb (Feature)</option>
+                                <option value="fa-circle-question">fa-circle-question (Inquiry)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeAddCategoryModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Save Category</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 6: Edit Category Modal -->
+    <div id="editCategoryModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> Edit Category</div>
+                <button type="button" onclick="closeEditCategoryModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" id="editCategoryForm" action="">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label" for="edit_cat_name">Category Name <span class="required">*</span></label>
+                        <input type="text" name="name" id="edit_cat_name" class="form-control" required>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="edit_cat_desc">Description</label>
+                        <textarea name="description" id="edit_cat_desc" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="edit_cat_color">Badge Color</label>
+                            <input type="color" name="color" id="edit_cat_color" class="form-control" style="height: 38px; padding: 2px 4px; cursor: pointer;">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="edit_cat_icon">FontAwesome Icon</label>
+                            <input type="text" name="icon" id="edit_cat_icon" class="form-control" placeholder="fa-ticket">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="edit_cat_active">Status</label>
+                        <select name="is_active" id="edit_cat_active" class="form-control">
+                            <option value="1">Active (Available to Requesters)</option>
+                            <option value="0">Disabled (Hidden from Form)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeEditCategoryModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 7: Add Priority Tier Modal -->
+    <div id="addPriorityModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-bolt" style="color: #ea580c;"></i> Add Priority & SLA Tier</div>
+                <button type="button" onclick="closeAddPriorityModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" action="/admin/priority/create">
+                <div class="modal-body">
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="new_prio_name">Priority Tier Name <span class="required">*</span></label>
+                            <input type="text" name="name" id="new_prio_name" class="form-control" placeholder="e.g. Critical" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="new_prio_level">Level Rank <span class="required">*</span></label>
+                            <input type="number" name="level" id="new_prio_level" class="form-control" min="1" max="10" placeholder="1=Highest" required>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="new_prio_sla">SLA Target (Hours) <span class="required">*</span></label>
+                            <input type="number" name="sla_response_hours" id="new_prio_sla" class="form-control" min="1" max="720" value="24" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="new_prio_color">Color Tag</label>
+                            <input type="color" name="color" id="new_prio_color" class="form-control" value="#ea580c" style="height: 38px; padding: 2px 4px; cursor: pointer;">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="new_prio_desc">Turnaround Policy / Description</label>
+                        <textarea name="description" id="new_prio_desc" class="form-control" rows="2" placeholder="Policy justification for this priority tier..."></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeAddPriorityModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Save Tier</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 8: Edit Priority Tier Modal -->
+    <div id="editPriorityModal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title"><i class="fa-solid fa-pen-to-square" style="color: var(--primary);"></i> Edit Priority & SLA Tier</div>
+                <button type="button" onclick="closeEditPriorityModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" id="editPriorityForm" action="">
+                <div class="modal-body">
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="edit_prio_name">Priority Name <span class="required">*</span></label>
+                            <input type="text" name="name" id="edit_prio_name" class="form-control" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="edit_prio_level">Level Rank <span class="required">*</span></label>
+                            <input type="number" name="level" id="edit_prio_level" class="form-control" min="1" max="10" required>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.85rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="edit_prio_sla">SLA Target (Hours) <span class="required">*</span></label>
+                            <input type="number" name="sla_response_hours" id="edit_prio_sla" class="form-control" min="1" max="720" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="edit_prio_color">Color Tag</label>
+                            <input type="color" name="color" id="edit_prio_color" class="form-control" style="height: 38px; padding: 2px 4px; cursor: pointer;">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="edit_prio_desc">Policy Description</label>
+                        <textarea name="description" id="edit_prio_desc" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 0.85rem;">
+                        <label class="form-label" for="edit_prio_active">Status</label>
+                        <select name="is_active" id="edit_prio_active" class="form-control">
+                            <option value="1">Enforced (Active)</option>
+                            <option value="0">Disabled (Inactive)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" onclick="closeEditPriorityModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System &bull; Enterprise Administrator Dashboard</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Interactive Scripts -->
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        function switchAdminTab(tab) {
+            document.querySelectorAll('.admin-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.admin-tab-section').forEach(sec => sec.style.display = 'none');
+
+            const btn = document.getElementById('tab-btn-' + tab);
+            const content = document.getElementById('admin-tab-content-' + tab);
+
+            if (btn) btn.classList.add('active');
+            if (content) content.style.display = 'block';
+        }
+
+        // Modal Helpers
+        function openAddUserModal() {
+            document.getElementById('addUserModal').classList.add('open');
+        }
+        function closeAddUserModal() {
+            document.getElementById('addUserModal').classList.remove('open');
+        }
+
+        function openEditUserModal(id, name, email, role, dept, status) {
+            document.getElementById('editUserForm').action = '/admin/user/' + id + '/edit';
+            document.getElementById('edit_user_name').value = name;
+            document.getElementById('edit_user_email').value = email;
+            document.getElementById('edit_user_role').value = role;
+            document.getElementById('edit_user_department').value = dept;
+            document.getElementById('edit_user_status').value = status;
+            document.getElementById('editUserModal').classList.add('open');
+        }
+        function closeEditUserModal() {
+            document.getElementById('editUserModal').classList.remove('open');
+        }
+
+        function openResetPasswordModal(id, username) {
+            document.getElementById('resetPasswordForm').action = '/admin/user/' + id + '/reset-password';
+            document.getElementById('reset_password_target_name').textContent = '@' + username;
+            document.getElementById('reset_new_password').value = '';
+            document.getElementById('resetPasswordModal').classList.add('open');
+        }
+        function closeResetPasswordModal() {
+            document.getElementById('resetPasswordModal').classList.remove('open');
+        }
+
+        function openReassignWorkloadModal() {
+            document.getElementById('reassignWorkloadModal').classList.add('open');
+        }
+        function closeReassignWorkloadModal() {
+            document.getElementById('reassignWorkloadModal').classList.remove('open');
+        }
+        function openReassignFromAgentModal(username) {
+            openReassignWorkloadModal();
+            const sourceSelect = document.getElementById('source_agent_select');
+            if (sourceSelect) {
+                sourceSelect.value = username;
+            }
+        }
+
+        function openAddCategoryModal() {
+            document.getElementById('addCategoryModal').classList.add('open');
+        }
+        function closeAddCategoryModal() {
+            document.getElementById('addCategoryModal').classList.remove('open');
+        }
+
+        function openEditCategoryModal(id, name, desc, color, icon, isActive) {
+            document.getElementById('editCategoryForm').action = '/admin/category/' + id + '/update';
+            document.getElementById('edit_cat_name').value = name;
+            document.getElementById('edit_cat_desc').value = desc;
+            document.getElementById('edit_cat_color').value = color;
+            document.getElementById('edit_cat_icon').value = icon;
+            document.getElementById('edit_cat_active').value = isActive;
+            document.getElementById('editCategoryModal').classList.add('open');
+        }
+        function closeEditCategoryModal() {
+            document.getElementById('editCategoryModal').classList.remove('open');
+        }
+
+        function openAddPriorityModal() {
+            document.getElementById('addPriorityModal').classList.add('open');
+        }
+        function closeAddPriorityModal() {
+            document.getElementById('addPriorityModal').classList.remove('open');
+        }
+
+        function openEditPriorityModal(id, name, level, color, sla, desc, isActive) {
+            document.getElementById('editPriorityForm').action = '/admin/priority/' + id + '/update';
+            document.getElementById('edit_prio_name').value = name;
+            document.getElementById('edit_prio_level').value = level;
+            document.getElementById('edit_prio_color').value = color;
+            document.getElementById('edit_prio_sla').value = sla;
+            document.getElementById('edit_prio_desc').value = desc;
+            document.getElementById('edit_prio_active').value = isActive;
+            document.getElementById('editPriorityModal').classList.add('open');
+        }
+        function closeEditPriorityModal() {
+            document.getElementById('editPriorityModal').classList.remove('open');
+        }
+
+        // Close on escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+            }
+        });
+
+        // Close when clicking modal backdrop
+        document.querySelectorAll('.modal-overlay').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    modal.classList.remove('open');
+                }
+            });
+        });
+
+        // User Filtering & Search
+        function filterUserRole(filter, button) {
+            document.querySelectorAll('#admin-tab-content-users .filter-pill').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
+            const rows = document.querySelectorAll('#admin-users-table tbody tr');
+            rows.forEach(row => {
+                const userRole = row.getAttribute('data-role');
+                const userStatus = row.getAttribute('data-status');
+
+                if (filter === 'all') {
+                    row.style.display = '';
+                } else if (filter === 'Suspended') {
+                    row.style.display = (userStatus === 'Suspended') ? '' : 'none';
+                } else {
+                    row.style.display = (userRole === filter) ? '' : 'none';
+                }
+            });
+        }
+
+        function searchUsersTable() {
+            const query = document.getElementById('user-search-box').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('#admin-users-table tbody tr');
+            rows.forEach(row => {
+                const name = row.getAttribute('data-name');
+                const username = row.getAttribute('data-username');
+                const email = row.getAttribute('data-email');
+                const dept = row.getAttribute('data-dept');
+                if (!query || name.includes(query) || username.includes(query) || email.includes(query) || dept.includes(query)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // Tickets Filtering & Search
+        let adminTicketFilter = 'all';
+        function filterAdminTickets(filter, button) {
+            adminTicketFilter = filter;
+            if (button) {
+                document.querySelectorAll('#admin-tab-content-tickets .filter-pill').forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+            }
+            applyAdminTicketFilter();
+        }
+
+        function searchAdminTickets() {
+            applyAdminTicketFilter();
+        }
+
+        function applyAdminTicketFilter() {
+            const query = document.getElementById('admin-ticket-search').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('#admin-tickets-table tbody tr');
+
+            rows.forEach(row => {
+                const status = row.getAttribute('data-status');
+                const assigned = row.getAttribute('data-assigned');
+                const isEscalated = row.getAttribute('data-escalated');
+                const isOverdue = row.getAttribute('data-overdue');
+                const searchText = row.getAttribute('data-search');
+
+                let matchesFilter = true;
+                if (adminTicketFilter === 'all') {
+                    matchesFilter = true;
+                } else if (adminTicketFilter === 'escalated') {
+                    matchesFilter = (isEscalated === 'true');
+                } else if (adminTicketFilter === 'overdue') {
+                    matchesFilter = (isOverdue === 'true');
+                } else if (adminTicketFilter === 'unassigned') {
+                    matchesFilter = (!assigned || assigned === '');
+                } else {
+                    matchesFilter = (status === adminTicketFilter);
+                }
+
+                let matchesSearch = true;
+                if (query) {
+                    matchesSearch = searchText.includes(query);
+                }
+
+                if (matchesFilter && matchesSearch) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // Bulk Ticket Actions Console
+        function toggleSelectAllTickets(masterCheckbox) {
+            const checkboxes = document.querySelectorAll('.ticket-select-chk');
+            checkboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (row && row.style.display !== 'none') {
+                    cb.checked = masterCheckbox.checked;
+                }
+            });
+            updateSelectedTicketsCount();
+        }
+
+        function updateSelectedTicketsCount() {
+            const checkedBoxes = document.querySelectorAll('.ticket-select-chk:checked');
+            const toolbar = document.getElementById('bulkActionsToolbar');
+            const counter = document.getElementById('selectedTicketsCounter');
+            const idInputs = document.querySelectorAll('.bulk-ticket-ids-input');
+
+            const ids = Array.from(checkedBoxes).map(cb => cb.value);
+            const idString = ids.join(',');
+
+            idInputs.forEach(input => input.value = idString);
+
+            if (checkedBoxes.length > 0) {
+                counter.textContent = checkedBoxes.length + ' Ticket(s) Selected';
+                toolbar.style.display = 'flex';
+            } else {
+                toolbar.style.display = 'none';
+                const selectAll = document.getElementById('selectAllTicketsCheckbox');
+                if (selectAll) selectAll.checked = false;
+            }
+        }
+
+        function clearSelectedTickets() {
+            document.querySelectorAll('.ticket-select-chk').forEach(cb => cb.checked = false);
+            const selectAll = document.getElementById('selectAllTicketsCheckbox');
+            if (selectAll) selectAll.checked = false;
+            updateSelectedTicketsCount();
+        }
+    </script>
+</body>
+</html>

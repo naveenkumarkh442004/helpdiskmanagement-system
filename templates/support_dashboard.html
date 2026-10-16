@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Operations Hub - HelpDesk</title>
+    <meta name="description" content="Support staff workspace for resolving customer tickets, triaging issues, and maintaining SLAs.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="support-brand-logo">
+                <div class="brand-icon" style="background: linear-gradient(135deg, #059669 0%, #0284c7 100%);">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item active"><i class="fa-solid fa-inbox"></i> Support Queue</a></li>
+                <li><a href="/create-ticket" class="nav-item"><i class="fa-solid fa-plus-circle"></i> Create Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item"><i class="fa-solid fa-ticket"></i> All Tickets</a></li>
+                <li><a href="/support-history" class="nav-item"><i class="fa-solid fa-clock-rotate-left"></i> Support History</a></li>
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-id-card"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- In-App Notification Bell & Dropdown -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Escalat' in n[1] or '🚨' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i>
+                                        {% elif 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Internal' in n[1] or '🔒' in n[1] %}
+                                            <i class="fa-solid fa-lock"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: linear-gradient(135deg, #059669 0%, #0284c7 100%);">{{ username[0] }}</div>
+                    <span class="user-meta-name">{{ username }}</span>
+                    <span class="badge badge-role-support">Support Agent</span>
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-support-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Support Area -->
+    <main class="app-main">
+        <div class="app-container">
+            
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' or category == 'error' else ('warning' if category == 'warning' else 'success') }}" style="margin-bottom: 1.5rem;">
+                            <i class="fa-solid {{ 'fa-circle-exclamation' if category == 'danger' or category == 'warning' else 'fa-circle-check' }} alert-icon"></i>
+                            <div>{{ message }}</div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Welcome Banner -->
+            <div class="welcome-box" style="background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #0284c7 100%);">
+                <div class="welcome-text">
+                    <h1>Support Operations Hub</h1>
+                    <p>Welcome, {{ username }}! Investigate customer tickets, triage escalations, coordinate with internal notes, and deliver resolutions.</p>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <a href="/support-history" class="btn btn-secondary btn-sm" style="background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Audit History
+                    </a>
+                    <a href="/tickets/export" class="btn btn-secondary btn-sm" style="background: #ffffff; color: #047857; font-weight: 700; border: none;">
+                        <i class="fa-solid fa-file-csv"></i> Export Queue
+                    </a>
+                </div>
+            </div>
+
+            <!-- Stats Overview -->
+            <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-emerald" style="background: #ecfdf5; color: #059669;">
+                        <i class="fa-solid fa-user-check"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.my_assigned if stats else 0 }}</div>
+                        <div class="stat-label">Assigned to Me</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-rose" style="background: #fef2f2; color: #dc2626;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.escalated_tickets if stats else 0 }}</div>
+                        <div class="stat-label">🚨 Escalated Queue</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-amber" style="background: #fff7ed; color: #ea580c;">
+                        <i class="fa-solid fa-hand-holding-hand"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.unassigned if stats else 0 }}</div>
+                        <div class="stat-label">Unassigned Queue</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-blue">
+                        <i class="fa-solid fa-envelope-open"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.open_tickets if stats else 0 }}</div>
+                        <div class="stat-label">Open Queue</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-amber" style="background: #fef3c7; color: #d97706;">
+                        <i class="fa-solid fa-hourglass-half"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.pending_tickets if stats else 0 }}</div>
+                        <div class="stat-label">Pending / Waiting</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-rose">
+                        <i class="fa-solid fa-fire-flame-curved"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.critical_tickets if stats else 0 }}</div>
+                        <div class="stat-label">Critical Tickets</div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-indigo">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    <div class="stat-details">
+                        <div class="stat-value">{{ stats.total_tickets if stats else 0 }}</div>
+                        <div class="stat-label">Total Tickets</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Support Ticket Queue Header -->
+            <div class="page-header" style="margin-top: 2rem; margin-bottom: 1rem;">
+                <div>
+                    <h2>Triage & Support Queue</h2>
+                    <p class="text-muted">Manage assignments, triage escalations, track status, and coordinate customer responses.</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Sort By:</span>
+                    <select id="support-sort-select" class="form-control form-control-sm" style="width: auto;" onchange="sortSupportTable(this.value)">
+                        <option value="priority">Priority / Escalation (Default)</option>
+                        <option value="id-desc">Ticket ID (Newest)</option>
+                        <option value="id-asc">Ticket ID (Oldest)</option>
+                        <option value="status">Status</option>
+                        <option value="requester">Requester Name</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Toolbar with Filter Pills and Search -->
+            <div class="portal-toolbar">
+                <div class="filter-pills-group">
+                    <button class="filter-pill active" onclick="filterSupportTickets('all', this)">
+                        All Tickets ({{ tickets|length if tickets else 0 }})
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('escalated', this)" style="border-color: #fca5a5;">
+                        <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i> 🚨 Escalated ({{ stats.escalated_tickets }})
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('my-assigned', this)">
+                        <i class="fa-solid fa-user-check"></i> Assigned to Me ({{ stats.my_assigned }})
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('unassigned', this)">
+                        <i class="fa-solid fa-circle-question"></i> Unassigned ({{ stats.unassigned }})
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('Open', this)">
+                        <span class="badge-dot" style="background: #0284c7;"></span> Open
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('In Progress', this)">
+                        <span class="badge-dot" style="background: #d97706;"></span> In Progress
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('Pending', this)">
+                        <i class="fa-solid fa-hourglass-half" style="color: #d97706;"></i> Pending
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('Critical', this)">
+                        <i class="fa-solid fa-circle-exclamation" style="color: #dc2626;"></i> Critical
+                    </button>
+                    <button class="filter-pill" onclick="filterSupportTickets('Resolved', this)">
+                        <span class="badge-dot" style="background: #059669;"></span> Resolved
+                    </button>
+                </div>
+
+                <div class="search-input-wrapper">
+                    <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                    <input 
+                        type="text" 
+                        id="support-ticket-search" 
+                        class="form-control form-control-sm search-field" 
+                        placeholder="Search ticket subject, user, agent, category..." 
+                        onkeyup="searchSupportTickets()"
+                    >
+                </div>
+            </div>
+
+            {% if tickets and tickets|length > 0 %}
+                <div class="table-responsive" style="margin-top: 1rem;">
+                    <table class="custom-table" id="support-tickets-table">
+                        <thead>
+                            <tr>
+                                <th>Ticket ID</th>
+                                <th>Requester</th>
+                                <th>Subject</th>
+                                <th>Assigned To</th>
+                                <th>Category</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ticket in tickets %}
+                            <tr 
+                                data-id="{{ ticket[0] }}"
+                                data-status="{{ ticket[5] }}" 
+                                data-priority="{{ ticket[3] }}" 
+                                data-assigned="{{ ticket[9] or '' }}"
+                                data-is-my="{{ 'true' if ticket[9] == username else 'false' }}"
+                                data-escalated="{{ 'true' if ticket[10] else 'false' }}"
+                                data-requester="{{ ticket[1]|lower }}"
+                                data-search="{{ (ticket[0] ~ ' ' ~ ticket[4] ~ ' ' ~ ticket[1] ~ ' ' ~ ticket[2] ~ ' ' ~ (ticket[9] or 'unassigned') ~ ' ' ~ (ticket[11] or ''))|lower }}"
+                            >
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                                        <a href="/ticket/{{ ticket[0] }}" class="table-ticket-id">#{{ ticket[0] }}</a>
+                                        {% if ticket[10] %}
+                                            <span class="badge badge-priority-critical" style="font-size: 0.65rem; padding: 0.15rem 0.35rem;" title="Escalation: {{ ticket[11] }}">
+                                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <div class="user-avatar" style="width: 26px; height: 26px; font-size: 0.75rem; background: #0284c7;">{{ ticket[1][0] }}</div>
+                                        <strong>{{ ticket[1] }}</strong>
+                                    </div>
+                                </td>
+                                <td>
+                                    <a href="/ticket/{{ ticket[0] }}" style="text-decoration: none; color: inherit;">
+                                        <strong class="table-subject">{{ ticket[4] }}</strong>
+                                    </a>
+                                    {% if ticket[10] %}
+                                    <div style="margin-top: 0.2rem;">
+                                        <span class="badge" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 0.7rem;">
+                                            <i class="fa-solid fa-bolt"></i> {{ ticket[11] }}
+                                        </span>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ticket[9] %}
+                                        <span class="table-agent-badge">
+                                            <span class="table-agent-avatar">{{ ticket[9][0] }}</span>
+                                            <span>@{{ ticket[9] }}</span>
+                                            {% if ticket[9] == username %}
+                                                <span class="badge" style="font-size: 0.65rem; background: #ecfdf5; color: #059669; padding: 0.1rem 0.3rem;">You</span>
+                                            {% endif %}
+                                        </span>
+                                    {% else %}
+                                        <span class="table-agent-badge unassigned">
+                                            <i class="fa-solid fa-circle-question"></i> Unassigned
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge badge-category">{{ ticket[2] }}</span></td>
+                                <td>
+                                    {% if ticket[3] == 'Critical' %}
+                                        <span class="badge badge-priority-critical"><i class="fa-solid fa-circle-exclamation"></i> Critical</span>
+                                    {% elif ticket[3] == 'High' %}
+                                        <span class="badge badge-priority-high"><i class="fa-solid fa-arrow-up"></i> High</span>
+                                    {% elif ticket[3] == 'Medium' %}
+                                        <span class="badge badge-priority-medium"><i class="fa-solid fa-minus"></i> Medium</span>
+                                    {% else %}
+                                        <span class="badge badge-priority-low"><i class="fa-solid fa-arrow-down"></i> Low</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ticket[5] == 'Open' %}
+                                        <span class="badge badge-status-open"><span class="badge-dot"></span> Open</span>
+                                    {% elif ticket[5] == 'In Progress' %}
+                                        <span class="badge badge-status-inprogress"><span class="badge-dot"></span> In Progress</span>
+                                    {% elif ticket[5] == 'Pending' %}
+                                        <span class="badge badge-status-inprogress" style="background: #fef3c7; color: #b45309;"><i class="fa-solid fa-hourglass-half"></i> Pending</span>
+                                    {% elif ticket[5] == 'Resolved' %}
+                                        <span class="badge badge-status-resolved"><span class="badge-dot"></span> Resolved</span>
+                                    {% else %}
+                                        <span class="badge badge-status-closed"><span class="badge-dot"></span> {{ ticket[5] }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="table-date">{{ ticket[6] }}</td>
+                                <td style="text-align: right;">
+                                    <a href="/ticket/{{ ticket[0] }}" class="btn btn-primary btn-sm" id="btn-manage-ticket-{{ ticket[0] }}">
+                                        <i class="fa-solid fa-sliders"></i> Manage
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="noSupportResultsMessage" class="empty-state" style="display: none; margin-top: 1.5rem;">
+                    <div class="empty-icon"><i class="fa-solid fa-filter-circle-xmark"></i></div>
+                    <h3 class="empty-title">No matching tickets in queue</h3>
+                    <p class="empty-desc">Try clearing the search query or clicking another status filter tab.</p>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon"><i class="fa-solid fa-check-double"></i></div>
+                    <h3 class="empty-title">Queue is empty!</h3>
+                    <p class="empty-desc">Great job! All support requests have been addressed.</p>
+                </div>
+            {% endif %}
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        let currentFilter = 'all';
+
+        function filterSupportTickets(filter, button) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-pills-group .filter-pill').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            applyTableFilters();
+        }
+
+        function searchSupportTickets() {
+            applyTableFilters();
+        }
+
+        function applyTableFilters() {
+            const query = document.getElementById('support-ticket-search').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('#support-tickets-table tbody tr');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const status = row.getAttribute('data-status');
+                const priority = row.getAttribute('data-priority');
+                const isMy = row.getAttribute('data-is-my');
+                const assigned = row.getAttribute('data-assigned');
+                const isEscalated = row.getAttribute('data-escalated');
+                const searchText = row.getAttribute('data-search');
+
+                let matchesFilter = true;
+                if (currentFilter === 'all') {
+                    matchesFilter = true;
+                } else if (currentFilter === 'escalated') {
+                    matchesFilter = (isEscalated === 'true');
+                } else if (currentFilter === 'my-assigned') {
+                    matchesFilter = (isMy === 'true');
+                } else if (currentFilter === 'unassigned') {
+                    matchesFilter = (!assigned || assigned === '');
+                } else if (currentFilter === 'Critical') {
+                    matchesFilter = (priority === 'Critical');
+                } else {
+                    matchesFilter = (status === currentFilter);
+                }
+
+                let matchesSearch = true;
+                if (query) {
+                    matchesSearch = searchText.includes(query);
+                }
+
+                if (matchesFilter && matchesSearch) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            const emptyMsg = document.getElementById('noSupportResultsMessage');
+            if (emptyMsg) {
+                emptyMsg.style.display = (visibleCount === 0) ? 'block' : 'none';
+            }
+        }
+
+        function sortSupportTable(sortBy) {
+            const tbody = document.querySelector('#support-tickets-table tbody');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            const priorityWeights = { 'Critical': 1, 'High': 2, 'Medium': 3, 'Low': 4 };
+
+            rows.sort((a, b) => {
+                const aEsc = a.getAttribute('data-escalated') === 'true' ? 1 : 0;
+                const bEsc = b.getAttribute('data-escalated') === 'true' ? 1 : 0;
+                const aId = parseInt(a.getAttribute('data-id') || 0);
+                const bId = parseInt(b.getAttribute('data-id') || 0);
+                const aPrio = priorityWeights[a.getAttribute('data-priority')] || 5;
+                const bPrio = priorityWeights[b.getAttribute('data-priority')] || 5;
+                const aReq = a.getAttribute('data-requester') || '';
+                const bReq = b.getAttribute('data-requester') || '';
+                const aStatus = a.getAttribute('data-status') || '';
+                const bStatus = b.getAttribute('data-status') || '';
+
+                if (sortBy === 'priority') {
+                    if (aEsc !== bEsc) return bEsc - aEsc;
+                    if (aPrio !== bPrio) return aPrio - bPrio;
+                    return bId - aId;
+                } else if (sortBy === 'id-desc') {
+                    return bId - aId;
+                } else if (sortBy === 'id-asc') {
+                    return aId - bId;
+                } else if (sortBy === 'requester') {
+                    return aReq.localeCompare(bReq);
+                } else if (sortBy === 'status') {
+                    return aStatus.localeCompare(bStatus);
+                }
+                return 0;
+            });
+
+            rows.forEach(r => tbody.appendChild(r));
+        }
+    </script>
+</body>
+</html>

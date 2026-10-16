@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticket #{{ ticket.id }} - HelpDesk</title>
+    <meta name="description" content="View ticket details, track lifecycle status, manage escalations, and view support history.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="ticket-detail-logo">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+                <li><a href="/create-ticket" class="nav-item"><i class="fa-solid fa-plus-circle"></i> New Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item active"><i class="fa-solid fa-ticket"></i> Tickets</a></li>
+                {% if role in ['Admin', 'Support'] %}
+                <li><a href="/support-history" class="nav-item"><i class="fa-solid fa-clock-rotate-left"></i> Support History</a></li>
+                {% endif %}
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-user-gear"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- Notification Bell -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Escalat' in n[1] or '🚨' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i>
+                                        {% elif 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Internal' in n[1] or '🔒' in n[1] %}
+                                            <i class="fa-solid fa-lock"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: {{ '#db2777' if role == 'Admin' else ('#059669' if role == 'Support' else '#4f46e5') }};">
+                        {{ username[0] if username else 'U' }}
+                    </div>
+                    <span class="user-meta-name">{{ username }}</span>
+                    {% if role == 'Admin' %}
+                        <span class="badge badge-role-admin">Admin</span>
+                    {% elif role == 'Support' %}
+                        <span class="badge badge-role-support">Support</span>
+                    {% endif %}
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-ticket-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Ticket Content -->
+    <main class="app-main">
+        <div class="app-container">
+            
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' or category == 'error' else ('warning' if category == 'warning' else 'success') }}" style="margin-bottom: 1.5rem;">
+                            <i class="fa-solid {{ 'fa-circle-exclamation' if category == 'danger' or category == 'warning' else 'fa-circle-check' }} alert-icon"></i>
+                            <div>{{ message }}</div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Page Header / Breadcrumb -->
+            <div class="page-header">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                        <a href="/my-tickets" style="color: var(--text-muted); font-size: 0.875rem; text-decoration: none;">
+                            <i class="fa-solid fa-arrow-left"></i> Back to Tickets
+                        </a>
+                        <span style="color: var(--border-medium);">/</span>
+                        <span style="color: var(--primary); font-weight: 600; font-size: 0.875rem;">Ticket #{{ ticket.id }}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                        <h1>Support Ticket #{{ ticket.id }}</h1>
+                        {% if ticket.is_escalated %}
+                            <span class="badge badge-priority-critical pulse-animation" style="font-size: 0.85rem;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Escalated: {{ ticket.escalation_level }}
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                    
+                    <!-- Escalation Trigger Button -->
+                    {% if not ticket.is_escalated and ticket.status not in ['Resolved', 'Closed'] %}
+                        <button type="button" onclick="openEscalateModal()" class="btn btn-secondary btn-sm" id="btn-open-escalate-modal" style="border-color: #fca5a5; color: #dc2626;">
+                            <i class="fa-solid fa-arrow-up-right-dots"></i> {% if role in ['Admin', 'Support'] %}Escalate Ticket{% else %}Request Escalation{% endif %}
+                        </button>
+                    {% elif ticket.is_escalated and role in ['Admin', 'Support'] %}
+                        <form action="/ticket/{{ ticket.id }}/de-escalate" method="POST" style="margin: 0;">
+                            <button type="submit" class="btn btn-secondary btn-sm" style="color: #059669; border-color: #a7f3d0;" title="Resolve escalation">
+                                <i class="fa-solid fa-shield-check"></i> De-escalate
+                            </button>
+                        </form>
+                    {% endif %}
+
+                    {% if ticket.status == 'Resolved' or ticket.status == 'Closed' %}
+                        <form action="/ticket/{{ ticket.id }}/reopen" method="POST" style="margin: 0;">
+                            <button type="submit" class="btn btn-secondary btn-sm" id="btn-reopen-ticket">
+                                <i class="fa-solid fa-rotate-left"></i> Reopen Ticket
+                            </button>
+                        </form>
+                    {% else %}
+                        <form action="/ticket/{{ ticket.id }}/close" method="POST" style="margin: 0;">
+                            <button type="submit" class="btn btn-ghost btn-sm" id="btn-quick-close-ticket" style="border: 1px solid var(--border-medium);">
+                                <i class="fa-solid fa-check"></i> Mark as Closed
+                            </button>
+                        </form>
+                    {% endif %}
+                    <a href="/create-ticket" class="btn btn-primary btn-sm" id="btn-new-ticket-shortcut">
+                        <i class="fa-solid fa-plus"></i> New Ticket
+                    </a>
+                </div>
+            </div>
+
+            <!-- Escalation Notice Banner if Escalated -->
+            {% if ticket.is_escalated %}
+            <div class="escalation-alert-banner" style="background: linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%); border: 1px solid #fecaca; border-left: 5px solid #dc2626; border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: flex-start; gap: 1rem; box-shadow: var(--shadow-sm);">
+                <div style="background: #fee2e2; color: #dc2626; width: 42px; height: 42px; border-radius: var(--radius-full); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                        <h4 style="color: #991b1b; margin: 0; font-size: 1.05rem;">
+                            🚨 Escalated Case: {{ ticket.escalation_level }}
+                        </h4>
+                        {% if ticket.escalated_at %}
+                        <span style="font-size: 0.78rem; color: #b91c1c;">
+                            Escalated on {{ ticket.escalated_at }} by <strong>@{{ ticket.escalated_by }}</strong>
+                        </span>
+                        {% endif %}
+                    </div>
+                    <div style="margin-top: 0.35rem; font-size: 0.92rem; color: #7f1d1d; line-height: 1.5;">
+                        <strong>Escalation Justification:</strong> {{ ticket.escalation_reason or 'Urgent technical investigation or priority triage requested.' }}
+                    </div>
+                    {% if ticket.escalation_target %}
+                    <div style="margin-top: 0.25rem; font-size: 0.82rem; color: #991b1b;">
+                        <i class="fa-solid fa-user-shield"></i> Assigned Specialist: <strong>@{{ ticket.escalation_target }}</strong>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if role in ['Admin', 'Support'] %}
+                <form action="/ticket/{{ ticket.id }}/de-escalate" method="POST" style="margin: 0; align-self: center;">
+                    <button type="submit" class="btn btn-secondary btn-sm" style="background: #ffffff; color: #dc2626; border: 1px solid #fecaca; white-space: nowrap;">
+                        <i class="fa-solid fa-shield-check"></i> Resolve Escalation
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Status Progression Tracker / Pipeline -->
+            <div class="status-stepper-card">
+                <div class="status-stepper-title">
+                    <span><i class="fa-solid fa-diagram-project" style="color: var(--primary); margin-right: 0.4rem;"></i> Lifecycle Progression Pipeline</span>
+                    <span style="color: var(--text-primary); font-weight: 700;">Current Status: {{ ticket.status }}</span>
+                </div>
+
+                <div class="status-stepper">
+                    <!-- Step 1: Open -->
+                    <div class="stepper-step {% if ticket.status in ['Open', 'In Progress', 'Pending', 'Resolved', 'Closed'] %}{{ 'active' if ticket.status == 'Open' else 'completed' }}{% endif %}">
+                        <div class="stepper-circle">
+                            {% if ticket.status != 'Open' %}
+                                <i class="fa-solid fa-check"></i>
+                            {% else %}
+                                1
+                            {% endif %}
+                        </div>
+                        <div class="stepper-label">Open</div>
+                        <div class="stepper-time">{{ ticket.created_at[:10] if ticket.created_at else '' }}</div>
+                    </div>
+
+                    <div class="stepper-connector {% if ticket.status in ['In Progress', 'Pending', 'Resolved', 'Closed'] %}filled{% endif %}"></div>
+
+                    <!-- Step 2: In Progress -->
+                    <div class="stepper-step {% if ticket.status in ['In Progress', 'Pending', 'Resolved', 'Closed'] %}{{ 'active' if ticket.status == 'In Progress' else 'completed' }}{% endif %}">
+                        <div class="stepper-circle">
+                            {% if ticket.status in ['Pending', 'Resolved', 'Closed'] %}
+                                <i class="fa-solid fa-check"></i>
+                            {% else %}
+                                2
+                            {% endif %}
+                        </div>
+                        <div class="stepper-label">In Progress</div>
+                    </div>
+
+                    <div class="stepper-connector {% if ticket.status in ['Pending', 'Resolved', 'Closed'] %}filled{% endif %}"></div>
+
+                    <!-- Step 3: Pending -->
+                    <div class="stepper-step {% if ticket.status == 'Pending' %}pending-state active{% elif ticket.status in ['Resolved', 'Closed'] %}completed{% endif %}">
+                        <div class="stepper-circle">
+                            {% if ticket.status in ['Resolved', 'Closed'] %}
+                                <i class="fa-solid fa-check"></i>
+                            {% elif ticket.status == 'Pending' %}
+                                <i class="fa-solid fa-hourglass-half"></i>
+                            {% else %}
+                                3
+                            {% endif %}
+                        </div>
+                        <div class="stepper-label">Pending</div>
+                    </div>
+
+                    <div class="stepper-connector {% if ticket.status in ['Resolved', 'Closed'] %}filled{% endif %}"></div>
+
+                    <!-- Step 4: Resolved -->
+                    <div class="stepper-step {% if ticket.status in ['Resolved', 'Closed'] %}{{ 'active' if ticket.status == 'Resolved' else 'completed' }}{% endif %}">
+                        <div class="stepper-circle">
+                            {% if ticket.status == 'Closed' %}
+                                <i class="fa-solid fa-check"></i>
+                            {% else %}
+                                4
+                            {% endif %}
+                        </div>
+                        <div class="stepper-label">Resolved</div>
+                    </div>
+
+                    <div class="stepper-connector {% if ticket.status in ['Closed'] %}filled{% endif %}"></div>
+
+                    <!-- Step 5: Closed -->
+                    <div class="stepper-step {% if ticket.status == 'Closed' %}active completed{% endif %}">
+                        <div class="stepper-circle">
+                            {% if ticket.status == 'Closed' %}
+                                <i class="fa-solid fa-flag-checkered"></i>
+                            {% else %}
+                                5
+                            {% endif %}
+                        </div>
+                        <div class="stepper-label">Closed</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ticket Detail Grid -->
+            <div class="ticket-detail-grid">
+                
+                <!-- Main Details Column -->
+                <div class="ticket-detail-main">
+                    
+                    <!-- Header Card -->
+                    <div class="ticket-detail-header-card">
+                        <div class="ticket-detail-badges">
+                            <span class="table-ticket-id" style="font-size: 0.95rem; padding: 0.3rem 0.75rem;">#{{ ticket.id }}</span>
+                            <span class="badge badge-category" style="font-size: 0.85rem;">{{ ticket.category }}</span>
+                            
+                            <!-- Priority Badge -->
+                            {% if ticket.priority == 'Critical' %}
+                                <span class="badge badge-priority-critical" style="font-size: 0.85rem;"><i class="fa-solid fa-circle-exclamation"></i> Critical Priority</span>
+                            {% elif ticket.priority == 'High' %}
+                                <span class="badge badge-priority-high" style="font-size: 0.85rem;"><i class="fa-solid fa-arrow-up"></i> High Priority</span>
+                            {% elif ticket.priority == 'Medium' %}
+                                <span class="badge badge-priority-medium" style="font-size: 0.85rem;"><i class="fa-solid fa-minus"></i> Medium Priority</span>
+                            {% else %}
+                                <span class="badge badge-priority-low" style="font-size: 0.85rem;"><i class="fa-solid fa-arrow-down"></i> Low Priority</span>
+                            {% endif %}
+
+                            <!-- Status Badge -->
+                            {% if ticket.status == 'Open' %}
+                                <span class="badge badge-status-open" style="font-size: 0.85rem;"><span class="badge-dot"></span> Open</span>
+                            {% elif ticket.status == 'In Progress' %}
+                                <span class="badge badge-status-inprogress" style="font-size: 0.85rem;"><span class="badge-dot"></span> In Progress</span>
+                            {% elif ticket.status == 'Pending' %}
+                                <span class="badge badge-status-inprogress" style="font-size: 0.85rem; background: #fef3c7; color: #b45309;"><i class="fa-solid fa-hourglass-half"></i> Pending</span>
+                            {% elif ticket.status == 'Resolved' %}
+                                <span class="badge badge-status-resolved" style="font-size: 0.85rem;"><span class="badge-dot"></span> Resolved</span>
+                            {% else %}
+                                <span class="badge badge-status-closed" style="font-size: 0.85rem;"><span class="badge-dot"></span> {{ ticket.status }}</span>
+                            {% endif %}
+                        </div>
+
+                        <h2 class="ticket-detail-title">{{ ticket.subject }}</h2>
+
+                        <div class="ticket-detail-meta">
+                            <div class="ticket-detail-meta-item">
+                                <i class="fa-solid fa-user-circle" style="color: var(--primary);"></i>
+                                <span>Requester: <strong>{{ ticket.username }}</strong></span>
+                            </div>
+                            <div class="ticket-detail-meta-item">
+                                <i class="fa-solid fa-user-shield" style="color: #059669;"></i>
+                                <span>Assigned Agent: <strong>{{ assigned_staff_info.name if assigned_staff_info else (ticket.assigned_to or 'Unassigned') }}</strong></span>
+                            </div>
+                            <div class="ticket-detail-meta-item">
+                                <i class="fa-solid fa-calendar-plus" style="color: var(--text-muted);"></i>
+                                <span>Created: <strong>{{ ticket.created_at }}</strong></span>
+                            </div>
+                            {% if ticket.updated_at and ticket.updated_at != ticket.created_at %}
+                            <div class="ticket-detail-meta-item">
+                                <i class="fa-solid fa-clock-rotate-left" style="color: var(--secondary);"></i>
+                                <span>Updated: <strong>{{ ticket.updated_at }}</strong></span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Issue Description Card -->
+                    <div class="ticket-body-card">
+                        <div class="ticket-body-title">
+                            <i class="fa-solid fa-align-left" style="color: var(--primary);"></i>
+                            <span>Issue Description</span>
+                        </div>
+                        <div class="ticket-description-content">{{ ticket.description }}</div>
+                    </div>
+
+                    <!-- Attachment Section -->
+                    <div class="attachment-card">
+                        <div class="ticket-body-title">
+                            <i class="fa-solid fa-paperclip" style="color: var(--accent);"></i>
+                            <span>Attached Files & Evidence</span>
+                        </div>
+
+                        {% if ticket.attachment %}
+                            {% if is_image %}
+                                <div class="attachment-preview-wrapper">
+                                    <img 
+                                        src="{{ url_for('static', filename='uploads/' + ticket.attachment) }}" 
+                                        alt="{{ ticket.attachment_name or 'Ticket Attachment' }}" 
+                                        class="attachment-image-view"
+                                    >
+                                </div>
+                            {% endif %}
+
+                            <div class="attachment-file-badge-card">
+                                <div class="attachment-left-info">
+                                    <div class="attachment-file-icon">
+                                        {% if is_image %}
+                                            <i class="fa-solid fa-file-image"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-file-lines"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="attachment-meta-info">
+                                        <div class="attachment-filename">{{ ticket.attachment_name or ticket.attachment }}</div>
+                                        <div class="text-muted" style="font-size: 0.775rem;">Attached with ticket submission</div>
+                                    </div>
+                                </div>
+                                <a 
+                                    href="{{ url_for('download_file', filename=ticket.attachment) }}" 
+                                    class="btn btn-primary btn-sm" 
+                                    download
+                                >
+                                    <i class="fa-solid fa-download"></i> Download File
+                                </a>
+                            </div>
+                        {% else %}
+                            <div style="padding: 1rem 0; color: var(--text-muted); font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>No attachments were provided with initial submission.</span>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Two-Way Discussion & Communication Thread -->
+                    <div class="discussion-card" style="margin-top: 1.5rem; background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); padding: 1.5rem;">
+                        <div class="ticket-body-title" style="margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fa-solid fa-comments" style="color: var(--primary);"></i>
+                                <span>Conversation & Coordination</span>
+                            </div>
+                            <span class="badge" style="background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border-medium);">
+                                {{ replies|length if replies else 0 }} messages
+                            </span>
+                        </div>
+
+                        <!-- Conversation Messages List -->
+                        {% if replies and replies|length > 0 %}
+                            <div class="replies-timeline" style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
+                                {% for r in replies %}
+                                <div class="reply-bubble-wrapper {% if r[2] == username %}my-reply{% endif %}">
+                                    <div class="reply-card {% if r[6] == 1 %}reply-internal-note{% elif r[3] == 'Admin' %}reply-admin{% elif r[3] == 'Support' %}reply-support{% else %}reply-user{% endif %}">
+                                        <div class="reply-header">
+                                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                                                <strong>{{ r[2] }}</strong>
+                                                {% if r[6] == 1 %}
+                                                    <span class="badge badge-internal-note"><i class="fa-solid fa-lock"></i> Staff Internal Note</span>
+                                                {% elif r[3] == 'Admin' %}
+                                                    <span class="badge badge-role-admin" style="font-size: 0.7rem;">Admin</span>
+                                                {% elif r[3] == 'Support' %}
+                                                    <span class="badge badge-role-support" style="font-size: 0.7rem;">Support Agent</span>
+                                                {% else %}
+                                                    <span class="badge badge-role-user" style="font-size: 0.7rem;">Requester</span>
+                                                {% endif %}
+                                            </div>
+                                            <span class="text-muted" style="font-size: 0.75rem;">{{ r[5] }}</span>
+                                        </div>
+
+                                        <div class="reply-body" style="font-size: 0.92rem; margin-top: 0.35rem; line-height: 1.5; white-space: pre-wrap;">{{ r[4] }}</div>
+
+                                        <!-- Reply Attachment if present -->
+                                        {% if r|length > 7 and r[7] %}
+                                        <div style="margin-top: 0.5rem;">
+                                            <a href="{{ url_for('download_file', filename=r[7]) }}" class="reply-attachment-item" download>
+                                                <i class="fa-solid fa-paperclip" style="color: var(--primary);"></i>
+                                                <span style="font-weight: 600;">{{ r[8] or r[7] }}</span>
+                                                <span class="text-muted" style="font-size: 0.75rem;">(Download)</span>
+                                            </a>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted" style="font-size: 0.9rem; font-style: italic; margin-bottom: 1.25rem;">
+                                No responses posted yet. Use the composer below to begin communication.
+                            </p>
+                        {% endif %}
+
+                        <!-- Reply Input Form -->
+                        <form method="POST" action="/ticket/{{ ticket.id }}/reply" enctype="multipart/form-data" class="reply-form" id="ticketReplyForm">
+                            
+                            {% if role == 'Admin' or role == 'Support' %}
+                            <div class="reply-type-tabs">
+                                <div class="reply-type-tab active" id="tabPublicReply" onclick="setReplyType('public')">
+                                    <i class="fa-solid fa-globe"></i> Public Customer Response
+                                </div>
+                                <div class="reply-type-tab tab-internal" id="tabInternalNote" onclick="setReplyType('internal')">
+                                    <i class="fa-solid fa-lock"></i> Private Staff Note
+                                </div>
+                            </div>
+                            
+                            <input type="hidden" name="is_internal" id="isInternalInput" value="0">
+
+                            <div id="internalNoteBanner" class="internal-note-notice" style="display: none;">
+                                <i class="fa-solid fa-eye-slash"></i>
+                                <span>This note is confidential and will only be visible to Support Agents and Administrators.</span>
+                            </div>
+
+                            <!-- Canned Quick Responses for Staff -->
+                            <div class="canned-responses-wrapper">
+                                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Quick Responses:</span>
+                                <button type="button" class="canned-chip" onclick="insertCanned('Hello! We are currently investigating this issue and will update you shortly.')">Investigating</button>
+                                <button type="button" class="canned-chip" onclick="insertCanned('Could you please share additional details or screenshot of the error message?')">Need More Info</button>
+                                <button type="button" class="canned-chip" onclick="insertCanned('We have applied the required fix. Please test and confirm if the issue is resolved on your end.')">Fix Applied</button>
+                                <button type="button" class="canned-chip" onclick="insertCanned('This issue has been successfully resolved and verified.')">Resolved</button>
+                            </div>
+                            {% endif %}
+
+                            <div class="form-group">
+                                <label class="form-label" for="reply-text">Post a Message or Update</label>
+                                <textarea 
+                                    class="form-control" 
+                                    name="message" 
+                                    id="reply-text" 
+                                    rows="3" 
+                                    placeholder="Type your message, questions, or diagnostic notes here..." 
+                                    required
+                                ></textarea>
+                            </div>
+
+                            <!-- Attachment upload on reply -->
+                            <div class="form-group" style="margin-top: 0.75rem;">
+                                <label class="form-label" style="font-size: 0.8rem;" for="reply-attachment">
+                                    <i class="fa-solid fa-paperclip"></i> Attach File / Screenshot (Optional)
+                                </label>
+                                <input type="file" name="attachment" id="reply-attachment" class="form-control form-control-sm" style="padding: 0.4rem;">
+                            </div>
+
+                            <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 0.75rem; gap: 0.75rem;">
+                                <button type="submit" class="btn btn-primary" id="btn-post-reply">
+                                    <i class="fa-solid fa-paper-plane"></i> Send Response
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Activity Log & Interactive Audit Trail Section -->
+                    <div class="ticket-body-card" style="margin-top: 1.5rem;">
+                        <div class="ticket-body-title" style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fa-solid fa-timeline" style="color: var(--secondary);"></i>
+                                <span>Ticket Lifecycle Audit Trail</span>
+                            </div>
+                            <div class="audit-filter-pills">
+                                <button type="button" class="audit-pill active" onclick="filterAuditItems('all', this)">All ({{ activities|length if activities else 0 }})</button>
+                                <button type="button" class="audit-pill" onclick="filterAuditItems('ESCALATION', this)">🚨 Escalations</button>
+                                <button type="button" class="audit-pill" onclick="filterAuditItems('STATUS_CHANGE', this)">Status</button>
+                                <button type="button" class="audit-pill" onclick="filterAuditItems('ASSIGNMENT', this)">Assignments</button>
+                            </div>
+                        </div>
+
+                        {% if activities and activities|length > 0 %}
+                            <div class="activity-timeline" id="activitiesTimeline">
+                                {% for act in activities %}
+                                <div class="activity-item" data-act-type="{{ act[3] }}">
+                                    <div class="activity-item-icon {% if act[3] == 'ESCALATION' %}icon-escalation{% elif act[3] == 'DE_ESCALATION' %}icon-deescalate{% elif act[3] == 'STATUS_CHANGE' %}icon-status{% elif act[3] == 'ASSIGNMENT' %}icon-assign{% elif act[3] == 'NOTE' %}icon-note{% elif act[3] == 'REPLY' %}icon-reply{% else %}icon-system{% endif %}">
+                                        {% if act[3] == 'ESCALATION' %}
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                        {% elif act[3] == 'DE_ESCALATION' %}
+                                            <i class="fa-solid fa-shield-check"></i>
+                                        {% elif act[3] == 'STATUS_CHANGE' %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% elif act[3] == 'ASSIGNMENT' %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif act[3] == 'NOTE' %}
+                                            <i class="fa-solid fa-lock"></i>
+                                        {% elif act[3] == 'REPLY' %}
+                                            <i class="fa-solid fa-comment"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-bell"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="activity-item-content">
+                                        <div class="activity-header">
+                                            <strong>{{ act[2] }}</strong>
+                                            <span class="activity-time">{{ act[7] }}</span>
+                                        </div>
+                                        <div style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.15rem;">
+                                            {{ act[6] or (act[4] ~ ' &rarr; ' ~ act[5]) }}
+                                        </div>
+                                        {% if act[4] and act[5] %}
+                                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem;">
+                                            <span style="text-decoration: line-through;">{{ act[4] }}</span>
+                                            <i class="fa-solid fa-arrow-right" style="font-size: 0.7rem; margin: 0 0.25rem;"></i>
+                                            <strong style="color: var(--primary);">{{ act[5] }}</strong>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted" style="font-size: 0.85rem; font-style: italic;">No audit events recorded yet.</p>
+                        {% endif %}
+                    </div>
+
+                </div>
+
+                <!-- Sidebar Details & Actions Column -->
+                <div class="ticket-detail-sidebar">
+                    
+                    <!-- Ticket Assignment Widget -->
+                    <div class="sidebar-action-card">
+                        <div class="sidebar-card-title">
+                            <i class="fa-solid fa-user-tag" style="color: var(--primary);"></i>
+                            <span>Ticket Assignment</span>
+                        </div>
+
+                        {% if ticket.assigned_to %}
+                            <div class="assigned-agent-box">
+                                <div class="assigned-agent-avatar">
+                                    {{ assigned_staff_info.name[0] if assigned_staff_info else ticket.assigned_to[0] }}
+                                </div>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-primary);">
+                                        {{ assigned_staff_info.name if assigned_staff_info else ticket.assigned_to }}
+                                    </div>
+                                    <div style="font-size: 0.78rem; color: var(--text-muted);">
+                                        @{{ ticket.assigned_to }} &bull; {{ assigned_staff_info.role if assigned_staff_info else 'Staff' }}
+                                    </div>
+                                </div>
+                            </div>
+                        {% else %}
+                            <div class="unassigned-badge-box">
+                                <i class="fa-solid fa-triangle-exclamation unassigned-icon"></i>
+                                <div>
+                                    <strong style="display: block; font-size: 0.88rem;">Unassigned</strong>
+                                    <span style="font-size: 0.78rem;">Awaiting support agent allocation.</span>
+                                </div>
+                            </div>
+                        {% endif %}
+
+                        <!-- Support / Admin Assignment Controls -->
+                        {% if role == 'Admin' or role == 'Support' %}
+                            <form method="POST" action="/ticket/{{ ticket.id }}/assign" class="agent-select-form">
+                                <div class="form-group" style="margin-bottom: 0.5rem;">
+                                    <label class="form-label" style="font-size: 0.8rem;" for="assigned_to_select">Reassign Agent</label>
+                                    <select name="assigned_to" id="assigned_to_select" class="form-control form-control-sm">
+                                        <option value="">-- Unassigned --</option>
+                                        {% for staff in staff_list %}
+                                            <option value="{{ staff[1] }}" {% if ticket.assigned_to == staff[1] %}selected{% endif %}>
+                                                {{ staff[2] }} (@{{ staff[1] }}) - {{ staff[3] }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+
+                                <div style="display: flex; gap: 0.5rem; margin-top: 0.35rem;">
+                                    <button type="submit" class="btn btn-primary btn-sm btn-block" id="btn-save-assignment">
+                                        <i class="fa-solid fa-floppy-disk"></i> Update Assignment
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Quick Self-Assign button if not already assigned to self -->
+                            {% if ticket.assigned_to != username %}
+                            <form method="POST" action="/ticket/{{ ticket.id }}/assign" style="margin-top: 0.5rem;">
+                                <input type="hidden" name="assigned_to" value="{{ username }}">
+                                <button type="submit" class="btn btn-secondary btn-sm btn-block" id="btn-assign-to-me">
+                                    <i class="fa-solid fa-hand"></i> Assign to Me
+                                </button>
+                            </form>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+
+                    <!-- Quick Metadata Editor (Priority & Category) for Support/Admin -->
+                    {% if role == 'Admin' or role == 'Support' %}
+                    <div class="sidebar-action-card">
+                        <div class="sidebar-card-title">
+                            <i class="fa-solid fa-sliders" style="color: var(--secondary);"></i>
+                            <span>Ticket Properties</span>
+                        </div>
+                        <form method="POST" action="/ticket/{{ ticket.id }}/update-meta">
+                            <div class="form-group" style="margin-bottom: 0.65rem;">
+                                <label class="form-label" style="font-size: 0.8rem;">Priority Level</label>
+                                <select name="priority" class="form-control form-control-sm">
+                                    <option value="Low" {% if ticket.priority == 'Low' %}selected{% endif %}>Low</option>
+                                    <option value="Medium" {% if ticket.priority == 'Medium' %}selected{% endif %}>Medium</option>
+                                    <option value="High" {% if ticket.priority == 'High' %}selected{% endif %}>High</option>
+                                    <option value="Critical" {% if ticket.priority == 'Critical' %}selected{% endif %}>Critical</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0.65rem;">
+                                <label class="form-label" style="font-size: 0.8rem;">Category</label>
+                                <select name="category" class="form-control form-control-sm">
+                                    <option value="Technical Issue" {% if ticket.category == 'Technical Issue' %}selected{% endif %}>Technical Issue</option>
+                                    <option value="Software Bug" {% if ticket.category == 'Software Bug' %}selected{% endif %}>Software Bug</option>
+                                    <option value="Billing & Invoicing" {% if ticket.category == 'Billing & Invoicing' %}selected{% endif %}>Billing & Invoicing</option>
+                                    <option value="Account Access" {% if ticket.category == 'Account Access' %}selected{% endif %}>Account Access</option>
+                                    <option value="Hardware Failure" {% if ticket.category == 'Hardware Failure' %}selected{% endif %}>Hardware Failure</option>
+                                    <option value="General Inquiry" {% if ticket.category == 'General Inquiry' %}selected{% endif %}>General Inquiry</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-secondary btn-sm btn-block">
+                                <i class="fa-solid fa-arrows-rotate"></i> Update Properties
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+
+                    <!-- Support / Admin Status Management Widget -->
+                    {% if role == 'Admin' or role == 'Support' %}
+                    <div class="sidebar-action-card">
+                        <div class="sidebar-card-title">
+                            <i class="fa-solid fa-bars-progress" style="color: var(--primary);"></i>
+                            <span>Update Ticket Status</span>
+                        </div>
+                        <form method="POST" action="/ticket/{{ ticket.id }}/status" class="status-change-form">
+                            <div class="status-options-grid">
+                                <label class="status-btn-radio">
+                                    <input type="radio" name="status" value="Open" {% if ticket.status == 'Open' %}checked{% endif %}>
+                                    <div class="status-chip-btn">
+                                        <span><i class="fa-solid fa-envelope-open" style="color: var(--status-open-text);"></i> Open</span>
+                                        <i class="fa-solid fa-check radio-check-icon"></i>
+                                    </div>
+                                </label>
+
+                                <label class="status-btn-radio">
+                                    <input type="radio" name="status" value="In Progress" {% if ticket.status == 'In Progress' %}checked{% endif %}>
+                                    <div class="status-chip-btn">
+                                        <span><i class="fa-solid fa-spinner" style="color: var(--status-inprogress-text);"></i> In Progress</span>
+                                        <i class="fa-solid fa-check radio-check-icon"></i>
+                                    </div>
+                                </label>
+
+                                <label class="status-btn-radio">
+                                    <input type="radio" name="status" value="Pending" {% if ticket.status == 'Pending' %}checked{% endif %}>
+                                    <div class="status-chip-btn">
+                                        <span><i class="fa-solid fa-hourglass-half" style="color: #d97706;"></i> Pending</span>
+                                        <i class="fa-solid fa-check radio-check-icon"></i>
+                                    </div>
+                                </label>
+
+                                <label class="status-btn-radio">
+                                    <input type="radio" name="status" value="Resolved" {% if ticket.status == 'Resolved' %}checked{% endif %}>
+                                    <div class="status-chip-btn">
+                                        <span><i class="fa-solid fa-circle-check" style="color: var(--status-resolved-text);"></i> Resolved</span>
+                                        <i class="fa-solid fa-check radio-check-icon"></i>
+                                    </div>
+                                </label>
+
+                                <label class="status-btn-radio">
+                                    <input type="radio" name="status" value="Closed" {% if ticket.status == 'Closed' %}checked{% endif %}>
+                                    <div class="status-chip-btn">
+                                        <span><i class="fa-solid fa-folder-closed" style="color: var(--status-closed-text);"></i> Closed</span>
+                                        <i class="fa-solid fa-check radio-check-icon"></i>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary btn-block" style="margin-top: 0.75rem;" id="btn-save-status">
+                                <i class="fa-solid fa-floppy-disk"></i> Apply Status Change
+                            </button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <!-- User Self-Service Actions -->
+                    <div class="sidebar-action-card">
+                        <div class="sidebar-card-title">
+                            <i class="fa-solid fa-wrench" style="color: var(--primary);"></i>
+                            <span>Resolution Actions</span>
+                        </div>
+                        {% if ticket.status != 'Closed' and ticket.status != 'Resolved' %}
+                            <form method="POST" action="/ticket/{{ ticket.id }}/status">
+                                <input type="hidden" name="status" value="Resolved">
+                                <button type="submit" class="btn btn-secondary btn-block" style="margin-bottom: 0.5rem;">
+                                    <i class="fa-solid fa-circle-check" style="color: #059669;"></i> Mark as Resolved
+                                </button>
+                            </form>
+                        {% endif %}
+                        {% if ticket.status == 'Resolved' or ticket.status == 'Closed' %}
+                            <form method="POST" action="/ticket/{{ ticket.id }}/reopen">
+                                <button type="submit" class="btn btn-primary btn-block">
+                                    <i class="fa-solid fa-rotate-left"></i> Reopen Ticket
+                                </button>
+                            </form>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Customer Support History Overview Widget -->
+                    <div class="sidebar-action-card">
+                        <div class="sidebar-card-title">
+                            <i class="fa-solid fa-id-card-clip" style="color: #6366f1;"></i>
+                            <span>Customer Support History</span>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                            <div style="flex: 1; background: var(--bg-page); padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); text-align: center; border: 1px solid var(--border-subtle);">
+                                <div style="font-weight: 700; font-size: 1.1rem; color: var(--text-primary);">{{ requester_history.total if requester_history else 1 }}</div>
+                                <div style="font-size: 0.72rem; color: var(--text-muted);">Total Tickets</div>
+                            </div>
+                            <div style="flex: 1; background: #ecfdf5; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); text-align: center; border: 1px solid #a7f3d0;">
+                                <div style="font-weight: 700; font-size: 1.1rem; color: #059669;">{{ requester_history.resolved if requester_history else 0 }}</div>
+                                <div style="font-size: 0.72rem; color: #065f46;">Resolved</div>
+                            </div>
+                        </div>
+
+                        {% if requester_history and requester_history.recent_tickets and requester_history.recent_tickets|length > 0 %}
+                            <div style="font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Other Recent Tickets:</div>
+                            <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+                                {% for ot in requester_history.recent_tickets %}
+                                <a href="/ticket/{{ ot[0] }}" style="display: flex; justify-content: space-between; align-items: center; padding: 0.35rem 0.5rem; background: var(--bg-page); border-radius: var(--radius-xs); text-decoration: none; font-size: 0.8rem; border: 1px solid var(--border-subtle);">
+                                    <span style="font-weight: 600; color: var(--text-primary);">#{{ ot[0] }} {{ ot[1][:22] }}...</span>
+                                    <span class="badge" style="font-size: 0.65rem; padding: 0.1rem 0.3rem;">{{ ot[2] }}</span>
+                                </a>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted" style="font-size: 0.8rem; margin: 0;">No other past tickets on record.</p>
+                        {% endif %}
+                    </div>
+
+                    <!-- Ticket Metadata Summary -->
+                    <div class="sidebar-action-card">
+                        <div class="sidebar-card-title">
+                            <i class="fa-solid fa-circle-info" style="color: var(--secondary);"></i>
+                            <span>Ticket Summary</span>
+                        </div>
+                        <div class="sidebar-meta-list">
+                            <div class="sidebar-meta-item">
+                                <div class="sidebar-meta-label">Ticket ID</div>
+                                <div class="sidebar-meta-val">#{{ ticket.id }}</div>
+                            </div>
+                            <div class="sidebar-meta-item">
+                                <div class="sidebar-meta-label">Category</div>
+                                <div class="sidebar-meta-val">{{ ticket.category }}</div>
+                            </div>
+                            <div class="sidebar-meta-item">
+                                <div class="sidebar-meta-label">Severity Level</div>
+                                <div class="sidebar-meta-val">{{ ticket.priority }}</div>
+                            </div>
+                            <div class="sidebar-meta-item">
+                                <div class="sidebar-meta-label">Escalation Status</div>
+                                <div class="sidebar-meta-val">
+                                    {% if ticket.is_escalated %}
+                                        <span class="badge badge-priority-critical" style="font-size: 0.7rem;">🚨 {{ ticket.escalation_level }}</span>
+                                    {% else %}
+                                        <span class="badge badge-category" style="font-size: 0.7rem;">Standard</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="sidebar-meta-item">
+                                <div class="sidebar-meta-label">Created On</div>
+                                <div class="sidebar-meta-val" style="font-size: 0.85rem;">{{ ticket.created_at }}</div>
+                            </div>
+                            <div class="sidebar-meta-item">
+                                <div class="sidebar-meta-label">Current Status</div>
+                                <div class="sidebar-meta-val">{{ ticket.status }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Modal for Ticket Escalation -->
+    <div id="escalateModal" style="display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;">
+        <div style="background: var(--bg-card); width: 100%; max-width: 500px; border-radius: var(--radius-lg); padding: 2rem; box-shadow: var(--shadow-xl); border: 1px solid var(--border-subtle);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h3 style="margin: 0; font-size: 1.25rem; color: #dc2626;">
+                    <i class="fa-solid fa-triangle-exclamation" style="margin-right: 0.5rem;"></i>
+                    {% if role in ['Admin', 'Support'] %}Escalate Ticket #{{ ticket.id }}{% else %}Request Ticket Escalation{% endif %}
+                </h3>
+                <button type="button" onclick="closeEscalateModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;">&times;</button>
+            </div>
+            
+            <form method="POST" action="/ticket/{{ ticket.id }}/escalate">
+                
+                {% if role in ['Admin', 'Support'] %}
+                <div class="form-group">
+                    <label class="form-label" for="escalation_level">Escalation Tier / Level</label>
+                    <select name="escalation_level" id="escalation_level" class="form-control">
+                        <option value="Tier 2 - Senior Support">Tier 2 - Senior Technical Support</option>
+                        <option value="Tier 3 - Engineering Lead">Tier 3 - Engineering / Dev Lead</option>
+                        <option value="Management Review">Management & SLA Review</option>
+                        <option value="Critical Incident Team">Critical Incident SWAT Team</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-top: 0.85rem;">
+                    <label class="form-label" for="target_agent">Route to Specialist Agent (Optional)</label>
+                    <select name="target_agent" id="target_agent" class="form-control">
+                        <option value="">-- Auto-Route to Escalation Pool --</option>
+                        {% for staff in staff_list %}
+                            <option value="{{ staff[1] }}">{{ staff[2] }} (@{{ staff[1] }}) - {{ staff[3] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-top: 0.85rem;">
+                    <label class="form-label" for="bump_priority">Adjust Priority</label>
+                    <select name="bump_priority" id="bump_priority" class="form-control">
+                        <option value="High" {% if ticket.priority != 'Critical' %}selected{% endif %}>Bump to High</option>
+                        <option value="Critical" {% if ticket.priority == 'Critical' %}selected{% endif %}>Bump to Critical Priority</option>
+                    </select>
+                </div>
+                {% else %}
+                <input type="hidden" name="escalation_level" value="Customer Escalation Request">
+                {% endif %}
+
+                <div class="form-group" style="margin-top: 0.85rem;">
+                    <label class="form-label" for="escalation_reason">
+                        Reason for Escalation <span style="color: #dc2626;">*</span>
+                    </label>
+                    <textarea 
+                        name="escalation_reason" 
+                        id="escalation_reason" 
+                        class="form-control" 
+                        rows="3" 
+                        placeholder="Please describe why this issue requires higher-tier technical investigation or immediate priority..."
+                        required
+                    ></textarea>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+                    <button type="button" onclick="closeEscalateModal()" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary" style="background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); border: none;">
+                        <i class="fa-solid fa-bolt"></i> Confirm Escalation
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        function setReplyType(type) {
+            const tabPublic = document.getElementById('tabPublicReply');
+            const tabInternal = document.getElementById('tabInternalNote');
+            const inputInternal = document.getElementById('isInternalInput');
+            const banner = document.getElementById('internalNoteBanner');
+            const btn = document.getElementById('btn-post-reply');
+
+            if (type === 'internal') {
+                tabPublic.classList.remove('active');
+                tabInternal.classList.add('active');
+                inputInternal.value = '1';
+                banner.style.display = 'flex';
+                btn.innerHTML = '<i class="fa-solid fa-lock"></i> Save Internal Note';
+                btn.style.background = 'linear-gradient(135deg, #d97706 0%, #b45309 100%)';
+            } else {
+                tabInternal.classList.remove('active');
+                tabPublic.classList.add('active');
+                inputInternal.value = '0';
+                banner.style.display = 'none';
+                btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Send Response';
+                btn.style.background = '';
+            }
+        }
+
+        function insertCanned(text) {
+            const textarea = document.getElementById('reply-text');
+            if (textarea) {
+                textarea.value = text;
+                textarea.focus();
+            }
+        }
+
+        function openEscalateModal() {
+            document.getElementById('escalateModal').style.display = 'flex';
+        }
+
+        function closeEscalateModal() {
+            document.getElementById('escalateModal').style.display = 'none';
+        }
+
+        function filterAuditItems(type, btn) {
+            document.querySelectorAll('.audit-pill').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+
+            const items = document.querySelectorAll('#activitiesTimeline .activity-item');
+            items.forEach(item => {
+                const itemType = item.getAttribute('data-act-type');
+                if (type === 'all' || itemType === type) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

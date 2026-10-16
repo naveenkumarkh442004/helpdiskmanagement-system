@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Center - HelpDesk</title>
+    <meta name="description" content="View and manage all your real-time HelpDesk notifications and system alerts.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="notif-brand-logo">
+                <div class="brand-icon" style="background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+                <li><a href="/create-ticket" class="nav-item"><i class="fa-solid fa-plus-circle"></i> New Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item"><i class="fa-solid fa-ticket"></i> Tickets</a></li>
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-user-gear"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- In-App Notification Bell & Dropdown -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge" id="navbar-notif-counter">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Alerts</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Internal' in n[1] or '🔒' in n[1] %}
+                                            <i class="fa-solid fa-lock"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% elif 'Reopened' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: {{ '#db2777' if role == 'Admin' else ('#059669' if role == 'Support' else '#4f46e5') }};">
+                        {{ username[0] if username else 'U' }}
+                    </div>
+                    <span class="user-meta-name">{{ username }}</span>
+                    {% if role == 'Admin' %}
+                        <span class="badge badge-role-admin">Admin</span>
+                    {% elif role == 'Support' %}
+                        <span class="badge badge-role-support">Support</span>
+                    {% endif %}
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-notif-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Notification Area -->
+    <main class="app-main">
+        <div class="app-container">
+
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' or category == 'error' else ('warning' if category == 'warning' else 'success') }}" style="margin-bottom: 1.5rem;">
+                            <i class="fa-solid {{ 'fa-circle-exclamation' if category == 'danger' or category == 'warning' else 'fa-circle-check' }} alert-icon"></i>
+                            <div>{{ message }}</div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Page Header -->
+            <div class="page-header">
+                <div>
+                    <h1><i class="fa-solid fa-bell" style="color: var(--primary); margin-right: 0.5rem;"></i>Notification Center</h1>
+                    <p class="text-muted">Real-time alerts for ticket assignments, status updates, and discussion messages.</p>
+                </div>
+                <div style="display: flex; gap: 0.75rem;">
+                    {% if notifications and notifications|length > 0 %}
+                        <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                            <button type="submit" class="btn btn-secondary btn-sm" id="btn-mark-all-read">
+                                <i class="fa-solid fa-check-double"></i> Mark All as Read
+                            </button>
+                        </form>
+                        <form action="/notifications/clear-all" method="POST" style="margin: 0;" onsubmit="return confirm('Clear all notifications?');">
+                            <button type="submit" class="btn btn-ghost btn-sm" id="btn-clear-all" style="color: #dc2626;">
+                                <i class="fa-solid fa-trash-can"></i> Clear All
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Filter Tabs & Notifications Container -->
+            <div class="notifications-card">
+                
+                <div class="portal-toolbar" style="padding: 1rem 1.5rem; background: var(--bg-page); border-bottom: 1px solid var(--border-subtle); margin: 0;">
+                    <div class="filter-pills-group">
+                        <button class="filter-pill active" onclick="filterNotifications('all', this)">
+                            All ({{ notifications|length if notifications else 0 }})
+                        </button>
+                        <button class="filter-pill" onclick="filterNotifications('unread', this)">
+                            <span class="badge-dot" style="background: #ef4444;"></span> Unread ({{ unread_notifications_count if unread_notifications_count else 0 }})
+                        </button>
+                        <button class="filter-pill" onclick="filterNotifications('read', this)">
+                            <i class="fa-solid fa-check"></i> Read
+                        </button>
+                    </div>
+                </div>
+
+                <div class="notifications-list" id="notificationsList">
+                    {% if notifications and notifications|length > 0 %}
+                        {% for n in notifications %}
+                        <div class="notif-full-row {% if not n[6] %}unread{% endif %}" data-status="{{ 'unread' if not n[6] else 'read' }}">
+                            <div style="display: flex; align-items: flex-start; gap: 1rem; flex: 1;">
+                                <div class="notif-item-icon" style="width: 40px; height: 40px; font-size: 1.1rem; {% if not n[6] %}background: var(--primary); color: #fff;{% endif %}">
+                                    {% if 'Assigned' in n[3] %}
+                                        <i class="fa-solid fa-user-check"></i>
+                                    {% elif 'Reply' in n[3] or '💬' in n[3] %}
+                                        <i class="fa-solid fa-comment-dots"></i>
+                                    {% elif 'Internal' in n[3] or '🔒' in n[3] %}
+                                        <i class="fa-solid fa-lock"></i>
+                                    {% elif 'Status' in n[3] or '🔄' in n[3] %}
+                                        <i class="fa-solid fa-arrows-rotate"></i>
+                                    {% elif 'Reopened' in n[3] %}
+                                        <i class="fa-solid fa-triangle-exclamation"></i>
+                                    {% else %}
+                                        <i class="fa-solid fa-ticket"></i>
+                                    {% endif %}
+                                </div>
+                                <div style="flex: 1;">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                                        <strong style="font-size: 0.95rem;">{{ n[3] }}</strong>
+                                        {% if not n[6] %}
+                                            <span class="badge" style="background: #fef2f2; color: #dc2626; font-size: 0.7rem; border: 1px solid #fecaca;">New</span>
+                                        {% endif %}
+                                    </div>
+                                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 0.35rem; line-height: 1.45;">
+                                        {{ n[4] }}
+                                    </div>
+                                    <div style="color: var(--text-muted); font-size: 0.775rem; display: flex; align-items: center; gap: 0.5rem;">
+                                        <span><i class="fa-regular fa-clock"></i> {{ n[7] }}</span>
+                                        {% if n[2] %}
+                                            <span>• From <strong>{{ n[2] }}</strong></span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0;">
+                                <a href="{{ n[5] }}" class="btn btn-primary btn-sm" style="text-decoration: none;">
+                                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Ticket
+                                </a>
+                                {% if not n[6] %}
+                                <form action="/notifications/mark-read/{{ n[0] }}" method="POST" style="margin: 0;">
+                                    <button type="submit" class="btn btn-ghost btn-sm" title="Mark as read">
+                                        <i class="fa-solid fa-check"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state" style="padding: 4rem 2rem;">
+                            <div class="empty-icon"><i class="fa-solid fa-bell-slash"></i></div>
+                            <h3 class="empty-title">All caught up!</h3>
+                            <p class="empty-desc">You do not have any notifications at the moment. As tickets are updated, alerts will appear here.</p>
+                            <a href="/dashboard" class="btn btn-secondary" style="margin-top: 1rem;">Back to Dashboard</a>
+                        </div>
+                    {% endif %}
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        function filterNotifications(filter, button) {
+            document.querySelectorAll('.portal-toolbar .filter-pill').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
+            const rows = document.querySelectorAll('#notificationsList .notif-full-row');
+            rows.forEach(row => {
+                const status = row.getAttribute('data-status');
+                if (filter === 'all') {
+                    row.style.display = 'flex';
+                } else if (filter === status) {
+                    row.style.display = 'flex';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

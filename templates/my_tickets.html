@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Support Tickets - HelpDesk</title>
+    <meta name="description" content="Search, filter, sort, and track the full resolution lifecycle of support requests.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="mytickets-brand-logo">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+                <li><a href="/create-ticket" class="nav-item"><i class="fa-solid fa-plus-circle"></i> New Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item active"><i class="fa-solid fa-ticket"></i> My Tickets</a></li>
+                {% if role in ['Admin', 'Support'] %}
+                <li><a href="/support-history" class="nav-item"><i class="fa-solid fa-clock-rotate-left"></i> Support History</a></li>
+                {% endif %}
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-user-gear"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- Notification Bell -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Escalat' in n[1] or '🚨' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i>
+                                        {% elif 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: {{ '#db2777' if role == 'Admin' else ('#059669' if role == 'Support' else '#4f46e5') }};">
+                        {{ username[0] if username else 'U' }}
+                    </div>
+                    <span class="user-meta-name">{{ username }}</span>
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-mytickets-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Tickets Content -->
+    <main class="app-main">
+        <div class="app-container">
+            
+            <div class="page-header">
+                <div>
+                    <h1>Support Tickets Explorer</h1>
+                    <p class="text-muted">Search, filter, sort, and inspect resolution progress across all ticket submissions.</p>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <a href="/tickets/export?q={{ current_filters.q }}&status={{ current_filters.status }}&priority={{ current_filters.priority }}&category={{ current_filters.category }}&is_escalated={{ current_filters.is_escalated }}&sort_by={{ current_filters.sort_by }}&sort_order={{ current_filters.sort_order }}" class="btn btn-secondary btn-sm" id="btn-export-csv" title="Export current results as CSV">
+                        <i class="fa-solid fa-file-csv"></i> Export Results (CSV)
+                    </a>
+                    <a href="/create-ticket" class="btn btn-primary btn-sm" id="btn-create-new-ticket">
+                        <i class="fa-solid fa-plus"></i> Submit New Ticket
+                    </a>
+                </div>
+            </div>
+
+            <!-- Advanced Search, Filtering & Sorting Toolbar -->
+            <div class="portal-toolbar" style="padding: 1.25rem; margin-bottom: 1.5rem; flex-direction: column; align-items: stretch; gap: 1rem;">
+                
+                <!-- Quick Status Filter Pills -->
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="filter-pills-group" id="statusPillsGroup">
+                        <button type="button" class="filter-pill {% if not current_filters.status or current_filters.status == 'all' %}active{% endif %}" onclick="setQuickStatus('all')">
+                            All Tickets ({{ tickets|length }})
+                        </button>
+                        <button type="button" class="filter-pill {% if current_filters.status == 'Open' %}active{% endif %}" onclick="setQuickStatus('Open')">
+                            <span class="badge-dot" style="background: #0284c7;"></span> Open
+                        </button>
+                        <button type="button" class="filter-pill {% if current_filters.status == 'In Progress' %}active{% endif %}" onclick="setQuickStatus('In Progress')">
+                            <span class="badge-dot" style="background: #d97706;"></span> In Progress
+                        </button>
+                        <button type="button" class="filter-pill {% if current_filters.status == 'Pending' %}active{% endif %}" onclick="setQuickStatus('Pending')">
+                            <i class="fa-solid fa-hourglass-half" style="color: #d97706;"></i> Pending
+                        </button>
+                        <button type="button" class="filter-pill {% if current_filters.status == 'Resolved' %}active{% endif %}" onclick="setQuickStatus('Resolved')">
+                            <span class="badge-dot" style="background: #059669;"></span> Resolved
+                        </button>
+                        <button type="button" class="filter-pill {% if current_filters.status == 'Closed' %}active{% endif %}" onclick="setQuickStatus('Closed')">
+                            <span class="badge-dot" style="background: #64748b;"></span> Closed
+                        </button>
+                        <button type="button" class="filter-pill {% if current_filters.is_escalated == '1' %}active{% endif %}" onclick="toggleEscalatedFilter()" style="border-color: #fca5a5;">
+                            <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i> 🚨 Escalated Only
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Multi-criteria Filter Form -->
+                <form method="GET" action="/my-tickets" id="filterForm" class="advanced-filter-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; align-items: end;">
+                    <input type="hidden" name="status" id="formStatusInput" value="{{ current_filters.status }}">
+                    <input type="hidden" name="is_escalated" id="formEscalatedInput" value="{{ current_filters.is_escalated }}">
+
+                    <!-- Keyword Search -->
+                    <div class="form-group" style="margin: 0; grid-column: span 2;">
+                        <label class="form-label" style="font-size: 0.75rem;">Search Query</label>
+                        <div style="position: relative;">
+                            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.8rem;"></i>
+                            <input 
+                                type="text" 
+                                name="q" 
+                                id="ticketSearchInput" 
+                                value="{{ current_filters.q }}" 
+                                class="form-control form-control-sm" 
+                                style="padding-left: 2rem;" 
+                                placeholder="Search ticket #, subject, details, agent..."
+                                oninput="liveFilterTable()"
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Priority Filter -->
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Priority</label>
+                        <select name="priority" id="priorityFilter" class="form-control form-control-sm" onchange="document.getElementById('filterForm').submit()">
+                            <option value="all">All Priorities</option>
+                            <option value="Critical" {% if current_filters.priority == 'Critical' %}selected{% endif %}>Critical</option>
+                            <option value="High" {% if current_filters.priority == 'High' %}selected{% endif %}>High</option>
+                            <option value="Medium" {% if current_filters.priority == 'Medium' %}selected{% endif %}>Medium</option>
+                            <option value="Low" {% if current_filters.priority == 'Low' %}selected{% endif %}>Low</option>
+                        </select>
+                    </div>
+
+                    <!-- Category Filter -->
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Category</label>
+                        <select name="category" id="categoryFilter" class="form-control form-control-sm" onchange="document.getElementById('filterForm').submit()">
+                            <option value="all">All Categories</option>
+                            {% for c in categories %}
+                                <option value="{{ c }}" {% if current_filters.category == c %}selected{% endif %}>{{ c }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Sort By Field -->
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Sort By</label>
+                        <select name="sort_by" id="sortBySelect" class="form-control form-control-sm" onchange="document.getElementById('filterForm').submit()">
+                            <option value="id" {% if current_filters.sort_by == 'id' %}selected{% endif %}>Ticket ID</option>
+                            <option value="priority" {% if current_filters.sort_by == 'priority' %}selected{% endif %}>Priority Severity</option>
+                            <option value="created_at" {% if current_filters.sort_by == 'created_at' %}selected{% endif %}>Creation Date</option>
+                            <option value="updated_at" {% if current_filters.sort_by == 'updated_at' %}selected{% endif %}>Last Updated</option>
+                            <option value="status" {% if current_filters.sort_by == 'status' %}selected{% endif %}>Status Pipeline</option>
+                            <option value="escalated" {% if current_filters.sort_by == 'escalated' %}selected{% endif %}>Escalation Level</option>
+                        </select>
+                    </div>
+
+                    <!-- Sort Order -->
+                    <div class="form-group" style="margin: 0;">
+                        <label class="form-label" style="font-size: 0.75rem;">Order</label>
+                        <select name="sort_order" id="sortOrderSelect" class="form-control form-control-sm" onchange="document.getElementById('filterForm').submit()">
+                            <option value="desc" {% if current_filters.sort_order == 'desc' %}selected{% endif %}>Descending (&darr;)</option>
+                            <option value="asc" {% if current_filters.sort_order == 'asc' %}selected{% endif %}>Ascending (&uarr;)</option>
+                        </select>
+                    </div>
+
+                    <!-- Form Action Buttons -->
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button type="submit" class="btn btn-primary btn-sm" style="flex: 1;">
+                            <i class="fa-solid fa-filter"></i> Apply
+                        </button>
+                        <a href="/my-tickets" class="btn btn-secondary btn-sm" title="Reset All Filters">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </a>
+                    </div>
+
+                </form>
+
+            </div>
+
+            {% if tickets and tickets|length > 0 %}
+                <!-- Tickets Table -->
+                <div class="table-responsive">
+                    <table class="custom-table" id="ticketsTable">
+                        <thead>
+                            <tr>
+                                <th>Ticket ID</th>
+                                <th>Subject</th>
+                                <th>Category</th>
+                                <th>Priority</th>
+                                <th>Status</th>
+                                <th>Assigned Agent</th>
+                                <th>Submitted On</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ticket in tickets %}
+                            <tr class="ticket-row" 
+                                data-status="{{ ticket[8]|lower }}" 
+                                data-priority="{{ ticket[3]|lower }}" 
+                                data-category="{{ ticket[2]|lower }}" 
+                                data-escalated="{{ 'true' if ticket[12] else 'false' }}"
+                                data-search="{{ (ticket[0] ~ ' ' ~ ticket[4] ~ ' ' ~ ticket[2] ~ ' ' ~ (ticket[9] or 'unassigned') ~ ' ' ~ (ticket[13] or ''))|lower }}"
+                            >
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                        <a href="/ticket/{{ ticket[0] }}" class="table-ticket-id">#{{ ticket[0] }}</a>
+                                        {% if ticket[12] %}
+                                            <span class="badge badge-priority-critical" style="font-size: 0.65rem; padding: 0.15rem 0.35rem;" title="Escalation: {{ ticket[13] }}">
+                                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <a href="/ticket/{{ ticket[0] }}" style="text-decoration: none; color: inherit;">
+                                        <strong class="table-subject">{{ ticket[4] }}</strong>
+                                    </a>
+                                    {% if ticket[12] %}
+                                    <div style="margin-top: 0.2rem;">
+                                        <span class="badge" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 0.7rem;">
+                                            <i class="fa-solid fa-bolt"></i> {{ ticket[13] }}
+                                        </span>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge badge-category">{{ ticket[2] }}</span></td>
+                                <td>
+                                    {% if ticket[3] == 'Critical' %}
+                                        <span class="badge badge-priority-critical"><i class="fa-solid fa-circle-exclamation"></i> Critical</span>
+                                    {% elif ticket[3] == 'High' %}
+                                        <span class="badge badge-priority-high"><i class="fa-solid fa-arrow-up"></i> High</span>
+                                    {% elif ticket[3] == 'Medium' %}
+                                        <span class="badge badge-priority-medium"><i class="fa-solid fa-minus"></i> Medium</span>
+                                    {% else %}
+                                        <span class="badge badge-priority-low"><i class="fa-solid fa-arrow-down"></i> Low</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ticket[8] == 'Open' %}
+                                        <span class="badge badge-status-open"><span class="badge-dot"></span> Open</span>
+                                    {% elif ticket[8] == 'In Progress' %}
+                                        <span class="badge badge-status-inprogress"><span class="badge-dot"></span> In Progress</span>
+                                    {% elif ticket[8] == 'Pending' %}
+                                        <span class="badge badge-status-inprogress" style="background: #fef3c7; color: #b45309;"><i class="fa-solid fa-hourglass-half"></i> Pending</span>
+                                    {% elif ticket[8] == 'Resolved' %}
+                                        <span class="badge badge-status-resolved"><span class="badge-dot"></span> Resolved</span>
+                                    {% else %}
+                                        <span class="badge badge-status-closed"><span class="badge-dot"></span> {{ ticket[8] }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ticket[9] %}
+                                        <span class="table-agent-badge">
+                                            <span class="table-agent-avatar">{{ ticket[9][0] }}</span>
+                                            <span>@{{ ticket[9] }}</span>
+                                        </span>
+                                    {% else %}
+                                        <span class="table-agent-badge unassigned">
+                                            <i class="fa-solid fa-circle-question"></i> Unassigned
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="table-date">{{ ticket[19] }}</td>
+                                <td style="text-align: right;">
+                                    <a href="/ticket/{{ ticket[0] }}" class="btn btn-secondary btn-sm" id="btn-view-ticket-{{ ticket[0] }}">
+                                        <i class="fa-solid fa-arrow-up-right-from-square"></i> View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="noResultsMessage" class="empty-state" style="display: none; margin-top: 1.5rem;">
+                    <div class="empty-icon"><i class="fa-solid fa-filter-circle-xmark"></i></div>
+                    <h3 class="empty-title">No matching tickets found</h3>
+                    <p class="empty-desc">Try clearing your search query or switching the status filter tab.</p>
+                </div>
+
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon"><i class="fa-solid fa-ticket"></i></div>
+                    <h3 class="empty-title">No Tickets Found</h3>
+                    <p class="empty-desc">No support tickets matched your current search filters.</p>
+                    <a href="/create-ticket" class="btn btn-primary" style="margin-top: 1rem;">
+                        <i class="fa-solid fa-plus"></i> Open New Ticket
+                    </a>
+                </div>
+            {% endif %}
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        function setQuickStatus(status) {
+            const input = document.getElementById('formStatusInput');
+            input.value = status;
+            document.getElementById('filterForm').submit();
+        }
+
+        function toggleEscalatedFilter() {
+            const input = document.getElementById('formEscalatedInput');
+            input.value = (input.value === '1') ? '' : '1';
+            document.getElementById('filterForm').submit();
+        }
+
+        function liveFilterTable() {
+            const searchInput = document.getElementById('ticketSearchInput').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('.ticket-row');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const searchContent = row.getAttribute('data-search') || row.innerText.toLowerCase();
+                let matches = (!searchInput || searchContent.includes(searchInput));
+
+                if (matches) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            const noResults = document.getElementById('noResultsMessage');
+            if (noResults) {
+                noResults.style.display = (visibleCount === 0) ? 'block' : 'none';
+            }
+        }
+    </script>
+</body>
+</html>

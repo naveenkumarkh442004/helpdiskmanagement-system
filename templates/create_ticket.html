@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Support Ticket - HelpDesk</title>
+    <meta name="description" content="Submit a new support ticket to the HelpDesk team with priority, category, and file attachments.">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="navbar">
+        <div class="app-container navbar-inner">
+            <a href="/dashboard" class="brand" id="create-brand-logo">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-headset"></i>
+                </div>
+                <span class="brand-text">Help<span>Desk</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="nav-item"><i class="fa-solid fa-gauge-high"></i> Dashboard</a></li>
+                <li><a href="/create-ticket" class="nav-item active"><i class="fa-solid fa-plus-circle"></i> New Ticket</a></li>
+                <li><a href="/my-tickets" class="nav-item"><i class="fa-solid fa-ticket"></i> My Tickets</a></li>
+                <li><a href="/profile" class="nav-item"><i class="fa-solid fa-user-gear"></i> Profile</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <!-- Notification Bell -->
+                <div class="notification-wrapper">
+                    <button class="notification-bell-btn {% if unread_notifications_count and unread_notifications_count > 0 %}has-unread{% endif %}" id="btn-notif-bell" onclick="toggleNotificationDropdown()" title="Notifications">
+                        <i class="fa-solid fa-bell"></i>
+                        {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <span class="notification-counter-badge">{{ unread_notifications_count }}</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notif-dropdown-header">
+                            <h4><i class="fa-solid fa-bell" style="color: var(--primary);"></i> Notifications</h4>
+                            {% if unread_notifications_count and unread_notifications_count > 0 %}
+                            <form action="/notifications/mark-all-read" method="POST" style="margin: 0;">
+                                <button type="submit" class="btn btn-ghost btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Mark read</button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-body">
+                            {% if navbar_notifications and navbar_notifications|length > 0 %}
+                                {% for n in navbar_notifications %}
+                                <a href="{{ n[3] }}" class="notif-item {% if not n[4] %}unread{% endif %}">
+                                    <div class="notif-item-icon">
+                                        {% if 'Assigned' in n[1] %}
+                                            <i class="fa-solid fa-user-check"></i>
+                                        {% elif 'Reply' in n[1] or '💬' in n[1] %}
+                                            <i class="fa-solid fa-comment-dots"></i>
+                                        {% elif 'Status' in n[1] or '🔄' in n[1] %}
+                                            <i class="fa-solid fa-arrows-rotate"></i>
+                                        {% elif 'Reopened' in n[1] %}
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-ticket"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-item-content">
+                                        <div class="notif-item-title">{{ n[1] }}</div>
+                                        <div class="notif-item-desc">{{ n[2] }}</div>
+                                        <div class="notif-item-time">{{ n[5] }}</div>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                            {% else %}
+                                <div class="notif-empty-state">
+                                    <div class="notif-empty-icon"><i class="fa-regular fa-bell-slash"></i></div>
+                                    <div style="font-size: 0.85rem;">No alerts right now.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="notif-dropdown-footer">
+                            <a href="/notifications" style="font-weight: 600; color: var(--primary);">View All Notifications &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-profile-chip">
+                    <div class="user-avatar" style="background: {{ '#db2777' if role == 'Admin' else ('#059669' if role == 'Support' else '#4f46e5') }};">
+                        {{ username[0] if username else 'U' }}
+                    </div>
+                    <span class="user-meta-name">{{ username }}</span>
+                </div>
+                <a href="/logout" class="btn btn-ghost btn-sm" id="btn-create-logout" title="Sign out">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Form Section -->
+    <main class="app-main">
+        <div class="app-container">
+            
+            <div class="page-header">
+                <div>
+                    <h1>Create Support Ticket</h1>
+                    <p>Provide details about your issue and our technical team will assist you promptly.</p>
+                </div>
+                <a href="/dashboard" class="btn btn-secondary btn-sm" id="btn-back-dashboard">
+                    <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+
+            {% if error %}
+                <div class="alert alert-danger" id="ticket-error-alert">
+                    <i class="fa-solid fa-circle-exclamation alert-icon"></i>
+                    <div>{{ error }}</div>
+                </div>
+            {% endif %}
+
+            <div class="form-layout-grid">
+                
+                <!-- Main Ticket Form -->
+                <div class="card card-glass">
+                    <form method="POST" action="/create-ticket" enctype="multipart/form-data" id="create-ticket-form">
+                        
+                        <!-- Category Selection -->
+                        <div class="form-group">
+                            <label class="form-label" for="ticket-category">Category <span class="required">*</span></label>
+                            <select name="category" id="ticket-category" class="form-control" required>
+                                <option value="" disabled selected>Select issue category</option>
+                                {% if categories and categories|length > 0 %}
+                                    {% for cat in categories %}
+                                        <option value="{{ cat[1] }}">{{ cat[1] }}{% if cat[2] %} &mdash; {{ cat[2] }}{% endif %}</option>
+                                    {% endfor %}
+                                {% else %}
+                                    <option value="Technical Issue">💻 Technical Issue</option>
+                                    <option value="Software Problem">📦 Software Problem</option>
+                                    <option value="Hardware Problem">🖥️ Hardware Problem</option>
+                                    <option value="Network & Connectivity">🌐 Network & Connectivity</option>
+                                    <option value="Account & Access">🔐 Account & Access</option>
+                                    <option value="Billing & Subscription">💳 Billing & Subscription</option>
+                                    <option value="Security & Compliance">🛡️ Security & Compliance</option>
+                                    <option value="Feature Request">💡 Feature Request</option>
+                                    <option value="General Inquiry">📌 General Inquiry</option>
+                                {% endif %}
+                            </select>
+                        </div>
+
+                        <!-- Priority Assignment -->
+                        <div class="form-group">
+                            <label class="form-label">Priority Level <span class="required">*</span></label>
+                            <div class="priority-selector">
+                                {% if priorities and priorities|length > 0 %}
+                                    {% for p in priorities %}
+                                    <label class="priority-option priority-{{ p[1]|lower }}">
+                                        <input type="radio" name="priority" value="{{ p[1] }}" id="priority-{{ p[1]|lower }}" {% if p[1] == 'Medium' %}checked{% endif %}>
+                                        <div class="priority-chip">
+                                            {% if p[1] == 'Critical' %}<i class="fa-solid fa-fire" style="color: {{ p[3] }};"></i>
+                                            {% elif p[1] == 'High' %}<i class="fa-solid fa-arrow-up" style="color: {{ p[3] }};"></i>
+                                            {% elif p[1] == 'Medium' %}<i class="fa-solid fa-minus" style="color: {{ p[3] }};"></i>
+                                            {% else %}<i class="fa-solid fa-arrow-down" style="color: {{ p[3] }};"></i>{% endif %}
+                                            <span>{{ p[1] }}</span>
+                                            <span style="font-size: 0.72rem; opacity: 0.8; margin-left: 2px;">({{ p[4] }}h SLA)</span>
+                                        </div>
+                                    </label>
+                                    {% endfor %}
+                                {% else %}
+                                    <label class="priority-option priority-low">
+                                        <input type="radio" name="priority" value="Low" id="priority-low">
+                                        <div class="priority-chip">
+                                            <i class="fa-solid fa-arrow-down"></i> Low
+                                        </div>
+                                    </label>
+
+                                    <label class="priority-option priority-medium">
+                                        <input type="radio" name="priority" value="Medium" id="priority-medium" checked>
+                                        <div class="priority-chip">
+                                            <i class="fa-solid fa-minus"></i> Medium
+                                        </div>
+                                    </label>
+
+                                    <label class="priority-option priority-high">
+                                        <input type="radio" name="priority" value="High" id="priority-high">
+                                        <div class="priority-chip">
+                                            <i class="fa-solid fa-arrow-up"></i> High
+                                        </div>
+                                    </label>
+
+                                    <label class="priority-option priority-critical">
+                                        <input type="radio" name="priority" value="Critical" id="priority-critical">
+                                        <div class="priority-chip">
+                                            <i class="fa-solid fa-fire"></i> Critical
+                                        </div>
+                                    </label>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Subject -->
+                        <div class="form-group input-with-icon">
+                            <label class="form-label" for="ticket-subject">Subject / Summary <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <i class="fa-solid fa-heading input-icon"></i>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="ticket-subject" 
+                                    name="subject" 
+                                    placeholder="Brief summary of the issue (e.g., Cannot connect to VPN server)" 
+                                    required
+                                >
+                            </div>
+                        </div>
+
+                        <!-- Description -->
+                        <div class="form-group">
+                            <label class="form-label" for="ticket-description">Detailed Description <span class="required">*</span></label>
+                            <textarea 
+                                class="form-control" 
+                                id="ticket-description" 
+                                name="description" 
+                                rows="6" 
+                                placeholder="Describe what happened, exact error messages, steps to reproduce, and any business impact..." 
+                                required
+                            ></textarea>
+                        </div>
+
+                        <!-- File Upload Dropzone -->
+                        <div class="form-group">
+                            <label class="form-label">Attachment (Optional)</label>
+                            <div class="file-dropzone" id="fileDropzone">
+                                <input 
+                                    type="file" 
+                                    name="attachment" 
+                                    id="ticketAttachmentInput" 
+                                    accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx,.csv,.zip,.log"
+                                >
+                                <div class="dropzone-content">
+                                    <div class="dropzone-icon">
+                                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                                    </div>
+                                    <div class="dropzone-title">
+                                        Drag and drop your file here, or <span>browse files</span>
+                                    </div>
+                                    <div class="dropzone-hint">
+                                        Supports PNG, JPG, PDF, DOCX, TXT, LOG, ZIP (Max 16 MB)
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- File Selected Preview Card -->
+                            <div class="file-preview-box" id="filePreviewBox">
+                                <div class="file-preview-inner">
+                                    <div class="file-preview-left">
+                                        <div class="file-preview-icon" id="previewFileIcon">
+                                            <i class="fa-solid fa-file"></i>
+                                        </div>
+                                        <div class="file-preview-meta">
+                                            <div class="file-preview-name" id="previewFileName">filename.png</div>
+                                            <div class="file-preview-size" id="previewFileSize">0 KB</div>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn-remove-file" id="btnRemoveFile" title="Remove attachment">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;">
+                            <a href="/dashboard" class="btn btn-secondary" id="btn-cancel-ticket">Cancel</a>
+                            <button type="submit" class="btn btn-primary btn-lg" id="btn-submit-ticket">
+                                <i class="fa-solid fa-paper-plane"></i> Submit Ticket
+                            </button>
+                        </div>
+
+                    </form>
+                </div>
+
+                <!-- Helper Sidebar -->
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                    
+                    <div class="sidebar-card">
+                        <div class="sidebar-title">
+                            <i class="fa-solid fa-lightbulb" style="color: #f59e0b;"></i>
+                            <span>Writing an Effective Ticket</span>
+                        </div>
+                        <ul class="tip-list">
+                            <li class="tip-item">
+                                <i class="fa-solid fa-check"></i>
+                                <span><strong>Be Specific:</strong> Include exact error codes or warning messages received.</span>
+                            </li>
+                            <li class="tip-item">
+                                <i class="fa-solid fa-check"></i>
+                                <span><strong>Steps to Reproduce:</strong> Briefly list actions taken prior to encountering the problem.</span>
+                            </li>
+                            <li class="tip-item">
+                                <i class="fa-solid fa-check"></i>
+                                <span><strong>Attach Logs/Screenshots:</strong> Visual proof or error log files drastically accelerate resolution time.</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <div class="sidebar-title">
+                            <i class="fa-solid fa-clock" style="color: var(--primary);"></i>
+                            <span>Target SLA Response Times</span>
+                        </div>
+                        <ul class="tip-list">
+                            <li class="tip-item">
+                                <span class="badge badge-priority-critical" style="font-size: 0.72rem;">Critical</span>
+                                <span>&lt; 30 Minutes</span>
+                            </li>
+                            <li class="tip-item">
+                                <span class="badge badge-priority-high" style="font-size: 0.72rem;">High</span>
+                                <span>&lt; 2 Hours</span>
+                            </li>
+                            <li class="tip-item">
+                                <span class="badge badge-priority-medium" style="font-size: 0.72rem;">Medium</span>
+                                <span>&lt; 8 Hours</span>
+                            </li>
+                            <li class="tip-item">
+                                <span class="badge badge-priority-low" style="font-size: 0.72rem;">Low</span>
+                                <span>&lt; 24 Hours</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="app-container footer-inner">
+            <div>© 2026 HelpDesk Management System</div>
+            <div class="system-status-indicator">
+                <span class="status-dot-pulse"></span>
+                <span>System Operational</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Interactive File Upload Script -->
+    <script>
+        const fileInput = document.getElementById('ticketAttachmentInput');
+        const dropzone = document.getElementById('fileDropzone');
+        const previewBox = document.getElementById('filePreviewBox');
+        const previewName = document.getElementById('previewFileName');
+        const previewSize = document.getElementById('previewFileSize');
+        const previewIcon = document.getElementById('previewFileIcon');
+        const btnRemove = document.getElementById('btnRemoveFile');
+
+        // Drag & Drop visual feedback
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+            });
+        });
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function handleFileSelect() {
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                
+                // Validate size (16MB max)
+                if (file.size > 16 * 1024 * 1024) {
+                    alert('File size exceeds the 16 MB limit. Please select a smaller file.');
+                    fileInput.value = '';
+                    previewBox.style.display = 'none';
+                    return;
+                }
+
+                previewName.textContent = file.name;
+                previewSize.textContent = formatBytes(file.size);
+                
+                // Icon mapping based on extension
+                const ext = file.name.split('.').pop().toLowerCase();
+                let iconClass = 'fa-solid fa-file';
+                if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+                    iconClass = 'fa-solid fa-file-image';
+                } else if (ext === 'pdf') {
+                    iconClass = 'fa-solid fa-file-pdf';
+                } else if (['doc', 'docx'].includes(ext)) {
+                    iconClass = 'fa-solid fa-file-word';
+                } else if (['xls', 'xlsx', 'csv'].includes(ext)) {
+                    iconClass = 'fa-solid fa-file-excel';
+                } else if (['zip', 'rar', 'tar', 'gz'].includes(ext)) {
+                    iconClass = 'fa-solid fa-file-zipper';
+                } else if (['txt', 'log'].includes(ext)) {
+                    iconClass = 'fa-solid fa-file-lines';
+                }
+                previewIcon.innerHTML = `<i class="${iconClass}"></i>`;
+
+                previewBox.style.display = 'block';
+            } else {
+                previewBox.style.display = 'none';
+            }
+        }
+
+        btnRemove.addEventListener('click', () => {
+            fileInput.value = '';
+            previewBox.style.display = 'none';
+        });
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+        function toggleNotificationDropdown() {
+            const dropdown = document.getElementById('notificationDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.notification-wrapper');
+            const dropdown = document.getElementById('notificationDropdown');
+            if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+    </script>
+
+</body>
+</html>
