@@ -130,6 +130,11 @@
                     <a href="/admin/operations/export" class="btn btn-secondary" id="btn-export-operations" style="background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);">
                         <i class="fa-solid fa-file-csv"></i> Operations Report
                     </a>
+                    <form action="/admin/backup/create" method="POST" style="margin: 0; display: inline;">
+                        <button type="submit" class="btn btn-secondary" style="background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);" title="Create instant database backup snapshot">
+                            <i class="fa-solid fa-database"></i> Backup DB
+                        </button>
+                    </form>
                     <button class="btn btn-primary" onclick="openAddUserModal()" id="btn-add-user-modal-trigger" style="background: #ffffff; color: #6b21a8; font-weight: 700; border: none;">
                         <i class="fa-solid fa-user-plus"></i> Add Account
                     </button>

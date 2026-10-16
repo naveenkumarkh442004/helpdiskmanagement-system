@@ -13,12 +13,14 @@ ENV/
 .env
 .env.local
 
-# SQLite Database & Uploads
+# SQLite Database, Uploads & Backups
 helpdesk.db
 *.sqlite3
 *.db
 static/uploads/*
 !static/uploads/.gitkeep
+backups/*
+!backups/.gitkeep
 
 # IDE and Editor files
 .vscode/

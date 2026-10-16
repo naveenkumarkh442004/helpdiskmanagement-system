@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import json
-from app import app, init_db, query_tickets
+from app import app, init_db, query_tickets, create_database_backup, allowed_file
 from werkzeug.security import generate_password_hash
 
 def run_tests():
@@ -536,6 +536,114 @@ def run_tests():
     # Clean up pending test ticket
     c.execute("DELETE FROM tickets WHERE id = ?", (pending_ticket_id,))
     conn.commit()
+
+    # -------------------------------------------------------------
+    # Test 19: Security Implementation (HTTP Response Headers & Session Cookies)
+    # -------------------------------------------------------------
+    sec_res = client.get("/")
+    assert sec_res.headers.get("X-Content-Type-Options") == "nosniff"
+    assert sec_res.headers.get("X-Frame-Options") == "SAMEORIGIN"
+    assert sec_res.headers.get("X-XSS-Protection") == "1; mode=block"
+    assert sec_res.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+    assert app.config.get("SESSION_COOKIE_HTTPONLY") is True
+    assert app.config.get("SESSION_COOKIE_SAMESITE") == "Lax"
+    print("[PASS] Security headers (nosniff, SAMEORIGIN, XSS, Referrer) and session flags validated.")
+
+    # -------------------------------------------------------------
+    # Test 20: Application Optimization & Database Performance Indexes
+    # -------------------------------------------------------------
+    c.execute("PRAGMA journal_mode")
+    j_mode = c.fetchone()[0]
+    assert j_mode.lower() == "wal"
+
+    c.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+    active_indexes = [r[0] for r in c.fetchall() if not r[0].startswith("sqlite_autoindex")]
+    required_indexes = [
+        "idx_tickets_status", "idx_tickets_assigned_to", "idx_tickets_username",
+        "idx_tickets_priority", "idx_tickets_category", "idx_tickets_created_at",
+        "idx_replies_ticket_id", "idx_activities_ticket_id", "idx_notifications_user_read"
+    ]
+    for req_idx in required_indexes:
+        assert req_idx in active_indexes, f"Missing required index: {req_idx}"
+    print(f"[PASS] Performance optimization verified: SQLite WAL mode and {len(active_indexes)} active indexes.")
+
+    # -------------------------------------------------------------
+    # Test 21: Disaster Recovery & Online Database Backup Engine
+    # -------------------------------------------------------------
+    b_filename, b_filepath, b_size = create_database_backup()
+    assert os.path.exists(b_filepath)
+    assert b_size > 0
+    assert b_filename.startswith("helpdesk_backup_") and b_filename.endswith(".db")
+
+    # Verify backup integrity by opening in sqlite
+    b_conn = sqlite3.connect(b_filepath)
+    b_cur = b_conn.cursor()
+    b_cur.execute("PRAGMA integrity_check")
+    assert b_cur.fetchone()[0] == "ok"
+    b_cur.execute("SELECT COUNT(*) FROM tickets")
+    assert b_cur.fetchone()[0] > 0
+    b_conn.close()
+
+    # Test Admin backup endpoints
+    with client.session_transaction() as sess:
+        sess["username"] = "admin_tester"
+        sess["role"] = "Admin"
+
+    b_list_res = client.get("/admin/backup/list")
+    assert b_list_res.status_code == 200
+    b_list_json = json.loads(b_list_res.data)
+    assert b_list_json["success"] is True
+    assert b_list_json["count"] >= 1
+
+    b_create_res = client.post("/admin/backup/create", headers={"Accept": "application/json"})
+    assert b_create_res.status_code == 200
+    assert json.loads(b_create_res.data)["success"] is True
+
+    # Authorization: standard user forbidden from backup list
+    with client.session_transaction() as sess:
+        sess["username"] = "alice_client"
+        sess["role"] = "User"
+    user_b_res = client.get("/admin/backup/list", follow_redirects=True)
+    assert user_b_res.status_code == 200
+    assert b"Access denied" in user_b_res.data
+    print("[PASS] Disaster recovery engine verified: atomic snapshot, integrity check, and RBAC security.")
+
+    # -------------------------------------------------------------
+    # Test 22: Custom Error Handlers & Boundary Validation
+    # -------------------------------------------------------------
+    err404 = client.get("/non-existent-route-for-testing-404")
+    assert err404.status_code == 404
+    assert b"404" in err404.data
+    assert b"Page Not Found" in err404.data
+    assert b"Return to Dashboard" in err404.data
+    print("[PASS] Custom 404 error handler validated with branded template.")
+
+    # -------------------------------------------------------------
+    # Test 23: Data Validation & Malicious File Upload Prevention
+    # -------------------------------------------------------------
+    assert allowed_file("malware.exe") is False
+    assert allowed_file("script.py") is False
+    assert allowed_file("attack.sh") is False
+    assert allowed_file("hack.php") is False
+    assert allowed_file("document.pdf") is True
+    assert allowed_file("screenshot.png") is True
+    assert allowed_file("data.xlsx") is True
+    assert allowed_file("archive.zip") is True
+    assert app.config["MAX_CONTENT_LENGTH"] == 16 * 1024 * 1024
+    print("[PASS] Data validation and secure file upload whitelist verified.")
+
+    # -------------------------------------------------------------
+    # Test 24: System Diagnostics & Health Check API (/api/health)
+    # -------------------------------------------------------------
+    health_res = client.get("/api/health")
+    assert health_res.status_code == 200
+    health_json = json.loads(health_res.data)
+    assert health_json["status"] == "healthy"
+    assert health_json["database"]["connected"] is True
+    assert health_json["database"]["journal_mode"] == "wal"
+    assert health_json["database"]["indexes_active"] >= 9
+    assert health_json["backups"]["snapshots_available"] >= 1
+    print(f"[PASS] System Health API verified: status='{health_json['status']}', latency={health_json['latency_ms']}ms.")
 
     conn.close()
     print("\n=== ALL COMPREHENSIVE HELPDESK TEST CASES PASSED SUCCESSFULLY ===")
