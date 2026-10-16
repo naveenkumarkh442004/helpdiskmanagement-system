@@ -1,12 +1,31 @@
-# HelpDesk Management System
+# HelpDesk Support Management System
 
 A production-ready, feature-rich web-based HelpDesk and Ticketing Management System built with Flask, SQLite3, and modern UI templates.
 
 ---
 
+## 📚 Project Documentation & Deliverables
+
+- 📄 **[Full Project Documentation](file:///c:/Users/user/OneDrive/Desktop/HelpDesk_system/PROJECT_DOCUMENTATION.md)**: Academic project report, system architecture, ER diagrams, data dictionary, security model, and API reference.
+- 📖 **[User Manual & Operating Guide](file:///c:/Users/user/OneDrive/Desktop/HelpDesk_system/USER_MANUAL.md)**: Role-based step-by-step operating instructions for Clients, Support Agents, and Administrators.
+- 🖥️ **[Final Project Presentation Deck](file:///c:/Users/user/OneDrive/Desktop/HelpDesk_system/PRESENTATION.md)**: 12-slide comprehensive presentation deck for project defense and capstone evaluation.
+
+---
+
 ## 🌟 Comprehensive Architecture & Weekly Milestones
 
-### 1. 🛡️ System Integration, Security & Optimization (Week 8)
+### 1. 🚀 Final Delivery, User Manual & Production Deployment (Week 9)
+- **End-to-End System Testing**: All 24 integration test cases verified with a 100% pass rate.
+- **Project Documentation**: Academic-grade project report covering system goals, architecture, data dictionary, and API specs.
+- **Role-Based User Manual**: Step-by-step operational handbook for end-users, support staff, and administrators.
+- **Presentation Deck**: Slide-by-slide capstone presentation formatted for project review and defense.
+- **Production Deployment Suite**:
+  - `wsgi.py`: Production WSGI entry point.
+  - `Dockerfile`: Multi-stage, minimal production image.
+  - `docker-compose.yml`: Automated orchestration with persistent storage volumes.
+  - `Procfile`: Ready for cloud PaaS deployments (Render, Railway, Heroku).
+
+### 2. 🛡️ System Integration, Security & Optimization (Week 8)
 - **Security Hardening**:
   - Global security HTTP response headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`).
   - Session cookie hardening: `SESSION_COOKIE_HTTPONLY=True`, `SESSION_COOKIE_SAMESITE='Lax'`, 7-day expiration.
@@ -23,7 +42,7 @@ A production-ready, feature-rich web-based HelpDesk and Ticketing Management Sys
 - **System Health Diagnostics API**: `/api/health` providing real-time status, latency, index counts, table metrics, and backup snapshots.
 - **Custom Error Handling**: Branded, responsive error templates for `404 Not Found`, `403 Forbidden`, `413 Payload Too Large`, and `500 Server Error`.
 
-### 2. 📊 Reports & Operations Analytics (Week 7)
+### 3. 📊 Reports & Operations Analytics (Week 7)
 - **Timeframe Filtering**: Dynamically analyze operational metrics across *All Time, Last 7 Days, Last 30 Days, This Month, This Year*, or custom date ranges (`date_from`, `date_to`).
 - **Ticket Status Summaries**: Detailed distribution and visual meters for Open, In Progress, Pending, Resolved, and Closed tickets with backlog sizing.
 - **Category-Wise Issues**: Technical volume distribution, category resolution rates, average turnaround time (MTTR), and escalation frequency per domain.
@@ -37,7 +56,7 @@ A production-ready, feature-rich web-based HelpDesk and Ticketing Management Sys
   - `/reports/export/agents`: Individual agent scorecards and workload metrics.
   - `/reports/export/monthly`: Monthly trend statistics and historical data.
 
-### 3. ⚙️ Administrator Control Center (Week 6)
+### 4. ⚙️ Administrator Control Center (Week 6)
 - **Account Management**: Create, view, edit roles (`User`, `Support`, `Admin`), department assignment, toggle active/suspended status, reset user passwords, and safely delete accounts.
 - **Support Staff & Workload Balancing**: Monitor agent active queues, resolution efficiency rates, and reassign ticket workloads between staff with logged audit reasons.
 - **Category Configuration**: Create, edit custom hex color codes, FontAwesome icons, toggle active states, and delete categories with usage safety checks.
@@ -45,29 +64,27 @@ A production-ready, feature-rich web-based HelpDesk and Ticketing Management Sys
 - **Operations & Health Monitoring**: Live KPI cards, lifecycle status meters, category volume charts, and real-time audit trail feed.
 - **Bulk Ticket Management**: Execute bulk status changes, bulk priority updates, and bulk reassignments.
 
-### 4. 🎫 Ticket Lifecycle & Service Desk
+### 5. 🎫 Ticket Lifecycle & Service Desk (Weeks 1 to 5)
 - Ticket creation with attachments (PDF, images, logs, office documents up to 16MB).
 - Multi-criteria filtering, search, and priority-weighted sorting.
 - Discussions and internal notes on tickets with file attachments.
 - Escalation workflows with tier progression (Tier 1, Tier 2, Tier 3, Leadership).
-
-### 5. 👥 User & Support Portals
-- Dedicated User Dashboard to create and track personal tickets.
-- Dedicated Support Dashboard to manage assigned queues and respond to users.
 - In-app notification center with badge alerts and unread indicators.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Backend**: Python 3, Flask, Werkzeug Security
+- **Backend**: Python 3.11+, Flask, Werkzeug Security, Gunicorn
 - **Database**: SQLite3 (automatic schema migration, WAL mode, 9 performance indexes, online backup API)
 - **Frontend**: HTML5, Vanilla CSS (design system with CSS variables, responsive grid, glassmorphism), Jinja2 templates, FontAwesome icons
+- **DevOps**: Docker, Docker-Compose, Procfile, WSGI
 
 ---
 
-## 🚀 Installation & Setup
+## 🚀 Installation & Deployment
 
+### Option A: Local Python Environment
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/naveenkumarkh442004/helpdiskmanagement-system.git
@@ -91,10 +108,26 @@ A production-ready, feature-rich web-based HelpDesk and Ticketing Management Sys
 4. **Run the application**:
    ```bash
    python app.py
+   # Or using production WSGI:
+   python wsgi.py
    ```
 
 5. **Access the application**:
    Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your browser.
+
+---
+
+### Option B: Docker Container Deployment
+```bash
+# Build and run with Docker Compose
+docker-compose up -d --build
+
+# Inspect running container
+docker ps
+
+# Check application health
+curl http://localhost:5000/api/health
+```
 
 ---
 
